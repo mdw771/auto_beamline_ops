@@ -37,7 +37,7 @@ class BubbleSegmentor:
             mask_this_label = labeled_thresh_mask == label
             if i == 0:
                 self.final_mask += mask_this_label
-                self.cell_window_bbox = self.get_region_bbox(mask_this_label)
+                self.cell_window_bbox = self.estimate_cell_window_bbox(mask_this_label)
                 continue
             if not self.should_exclude(mask_this_label):
                 self.final_mask += mask_this_label
@@ -47,9 +47,18 @@ class BubbleSegmentor:
         plt.show()
         self.run_backsample()
 
-    def should_exclude(self, mask):
+    def estimate_cell_window_bbox(self, mask):
         bbox = self.get_region_bbox(mask)
-        if not self.cell_window_bbox.contains(bbox):
+        window_radius = max(bbox.height, bbox.width) / 2
+        if bbox.height < bbox.width:
+            bbox.set_sy(int(np.round(bbox.ey - 2 * window_radius)))
+        return bbox
+
+    def should_exclude(self, mask):
+        # plt.imshow(mask)
+        # plt.show()
+        bbox = self.get_region_bbox(mask)
+        if self.cell_window_bbox.is_isolated_from(bbox):
             return True
         if np.count_nonzero(mask) < 100 / self.downsample ** 2:
             return True

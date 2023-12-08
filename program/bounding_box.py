@@ -17,3 +17,33 @@ class BoundingBox(list):
             return True
         else:
             return False
+
+    def is_isolated_from(self, bbox):
+        if self.sx > bbox.ex or self.ex < bbox.sx or self.sy > bbox.ey or self.ey < bbox.sy:
+            return True
+        else:
+            return False
+
+    @property
+    def height(self):
+        return self.ey - self.sy
+
+    @property
+    def width(self):
+        return self.ex - self.sx
+
+    def set_sy(self, v):
+        self[0] = v
+        self.sy = v
+
+    def set_sx(self, v):
+        self[1] = v
+        self.sx = v
+
+    def set_ey(self, v):
+        self[2] = v
+        self.ey = v
+
+    def set_ex(self, v):
+        self[3] = v
+        self.ex = v
