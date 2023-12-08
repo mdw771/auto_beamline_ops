@@ -19,6 +19,7 @@ class BubbleSegmentor:
         self.orig_shape = None
         self.final_mask = None
         self.cell_window_bbox = None
+        self.cell_window_mask = None
 
     def set_camera_image(self, img):
         self.image = img
@@ -38,12 +39,14 @@ class BubbleSegmentor:
             if i == 0:
                 self.final_mask += mask_this_label
                 self.cell_window_bbox = self.estimate_cell_window_bbox(mask_this_label)
-                continue
+                self.cell_window_mask = self.estimate_cell_window_mask(mask_this_label)
             if not self.should_exclude(mask_this_label):
                 self.final_mask += mask_this_label
         fig, ax = plt.subplots(1, 2)
         ax[0].imshow(self.image)
-        ax[1].imshow(self.final_mask)
+        ax[0].imshow(self.cell_window_mask, alpha=0.5)
+        ax[1].imshow(self.image)
+        ax[1].imshow(self.final_mask, alpha=0.8)
         plt.show()
         self.run_backsample()
 
@@ -54,17 +57,44 @@ class BubbleSegmentor:
             bbox.set_sy(int(np.round(bbox.ey - 2 * window_radius)))
         return bbox
 
+    def estimate_cell_window_mask(self, mask):
+        """
+        Calculate a circular mask given a partial mask.
+
+        :param mask: np.ndarray.
+        :return: np.ndarray.
+        """
+        bbox = self.estimate_cell_window_bbox(mask)
+        mask = np.where(mask > 0, 1, 0)
+        mask_edge = ndi.binary_dilation(mask, np.ones([3, 3])) - mask
+        mask_edge[bbox.sy:int(bbox.sy + 0.7 * bbox.height), bbox.sx:bbox.ex] = 0
+        y, x = np.where(mask_edge > 0)
+        y = y[::40 // self.downsample]
+        x = x[::40 // self.downsample]
+        if len(y) < 3:
+            raise ValueError('There are not enough pixels for fitting circle. Is the window area too small?')
+        yc, xc, r = self.fit_circle(np.stack([y, x], axis=1))
+        y, x = np.mgrid[:mask.shape[0], :mask.shape[1]]
+        circ_mask = (y - yc) ** 2 + (x - xc) ** 2 <= r ** 2
+        return circ_mask
+
+
     def should_exclude(self, mask):
-        # plt.imshow(mask)
-        # plt.show()
-        bbox = self.get_region_bbox(mask)
-        if self.cell_window_bbox.is_isolated_from(bbox):
+        # bbox = self.get_region_bbox(mask)
+        # if self.cell_window_bbox.is_isolated_from(bbox):
+        if not self.intersects_with_cell_window_mask(mask):
             return True
         if np.count_nonzero(mask) < 100 / self.downsample ** 2:
             return True
         if self.is_round(mask):
             return True
         return False
+
+    def intersects_with_cell_window_mask(self, mask):
+        if np.count_nonzero(mask * self.cell_window_mask) > 0:
+            return True
+        else:
+            return False
 
     @staticmethod
     def get_region_bbox(mask):
@@ -101,6 +131,17 @@ class BubbleSegmentor:
         res = np.array(res)
         res = res[np.argsort(res[:, 1])[::-1]]
         return res[:, 0].astype(int)
+
+    def fit_circle(self, point_list):
+        point_list = np.array(point_list)
+        y, x = point_list[:, 0], point_list[:, 1]
+        a_mat = np.stack([y, x, np.ones_like(y)], axis=1)
+        b_vec = y ** 2 + x ** 2
+        x_vec = np.linalg.pinv(a_mat) @ b_vec
+        yc = x_vec[0] / 2
+        xc = x_vec[1] / 2
+        r = np.sqrt(x_vec[2] + yc ** 2 + xc ** 2)
+        return yc, xc, r
 
     def run_downsample(self):
         self.orig_shape = self.image.shape
