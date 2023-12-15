@@ -1,3 +1,4 @@
+import logging
 import time
 
 import numpy as np
@@ -9,6 +10,7 @@ import sklearn.decomposition
 import tqdm
 
 from bounding_box import BoundingBox
+from message_logger import logger
 
 
 class BubbleSegmentor:
@@ -32,7 +34,8 @@ class BubbleSegmentor:
         ndi.binary_closing(thresh_mask, structure=np.ones([5, 5]))
         self.final_mask = np.zeros_like(thresh_mask)
         labeled_thresh_mask, n_labels = ndi.label(thresh_mask)
-        labels_sorted = self.sort_labels_by_area(labeled_thresh_mask, n_labels)
+        labels_sorted = self.sort_labels(labeled_thresh_mask, n_labels, by='bbox_size')
+        # labels_sorted = self.process_sorted_labels(labels_sorted, labeled_thresh_mask)
 
         for i, label in enumerate(tqdm.tqdm(labels_sorted)):
             mask_this_label = labeled_thresh_mask == label
@@ -45,6 +48,18 @@ class BubbleSegmentor:
         if return_original_scale:
             self.run_backsample()
         return self.final_mask
+
+    def process_sorted_labels(self, labels_sorted, labeled_thresh_mask):
+        # Make sure the first label is not rounder than the second one. Otherwise, swap them.
+        pvr1 = self.calculate_region_principal_axis_eigenvalue_ratio(labeled_thresh_mask == labels_sorted[0])
+        pvr2 = self.calculate_region_principal_axis_eigenvalue_ratio(labeled_thresh_mask == labels_sorted[1])
+        logger.info('Principal eigenvalue ratios of the first 2 regions: {}, {}'.format(pvr1, pvr2))
+        if pvr1 < pvr2:
+            logger.info('Swapping the first 2 sorted labels...'.format(pvr1, pvr2))
+            temp = labels_sorted[0]
+            labels_sorted[0] = labels_sorted[1]
+            labels_sorted[1] = temp
+        return labels_sorted
 
     def estimate_cell_window_bbox(self, mask):
         bbox = self.get_region_bbox(mask)
@@ -61,9 +76,9 @@ class BubbleSegmentor:
         :return: np.ndarray.
         """
         bbox = self.estimate_cell_window_bbox(mask)
-        mask = np.where(mask > 0, 1, 0)
-        mask_edge = ndi.binary_dilation(mask, np.ones([3, 3])) - mask
+        mask_edge = self.get_edge_pixel_mask(mask)
         mask_edge[bbox.sy:int(bbox.sy + 0.7 * bbox.height), bbox.sx:bbox.ex] = 0
+        mask_edge = self.remove_kinks_on_arc(mask_edge)
         y, x = np.where(mask_edge > 0)
         y = y[::40 // self.downsample]
         x = x[::40 // self.downsample]
@@ -74,6 +89,29 @@ class BubbleSegmentor:
         circ_mask = (y - yc) ** 2 + (x - xc) ** 2 <= r ** 2
         return circ_mask
 
+    def remove_kinks_on_arc(self, edge_mask, corner_threshold=0.8):
+        """
+        Remove the non-smooth or kink regions on an arc-shaped mask.
+
+        :param edge_mask: np.ndarray.
+        :return: np.ndarray.
+        """
+        edge_mask = edge_mask.astype(float)
+        corner_map = skimage.feature.corner_harris(edge_mask, sigma=12 / self.downsample)
+        corner_map = corner_map / corner_map.max()
+        corner_mask = corner_map > corner_threshold
+        corner_mask = ndi.binary_dilation(corner_mask, np.ones([5, 5]))
+        edge_mask[corner_mask] = 0
+        edge_regions, n_regions = ndi.label(edge_mask)
+        sorted_labels = self.sort_labels(edge_regions, n_regions, by='area')
+        edge_mask = edge_regions == sorted_labels[0]
+
+        return edge_mask
+
+    def get_edge_pixel_mask(self, mask):
+        mask = np.where(mask > 0, 1, 0)
+        mask_edge = ndi.binary_dilation(mask, np.ones([3, 3])) - mask
+        return mask_edge
 
     def should_exclude(self, mask):
         # bbox = self.get_region_bbox(mask)
@@ -105,25 +143,33 @@ class BubbleSegmentor:
         :param mask: np.ndarray.
         :return: bool.
         """
+        eigen_value_ratio = self.calculate_region_principal_axis_eigenvalue_ratio(mask)
+        if eigen_value_ratio < 10:
+            return True
+        else:
+            return False
+
+    def calculate_region_principal_axis_eigenvalue_ratio(self, mask):
         pca = sklearn.decomposition.PCA(n_components=2)
         y_inds, x_inds = np.nonzero(mask)
         x = np.stack([y_inds, x_inds], axis=-1)
         res = pca.fit(x)
         eigen_value_ratio = res.explained_variance_ratio_[0] / res.explained_variance_ratio_[1]
-        if eigen_value_ratio < 10:
-            return True
-        else:
-            return False
-        plt.figure()
-        plt.imshow(mask)
-        plt.show()
+        return eigen_value_ratio
 
-    def sort_labels_by_area(self, labeled_mask, n_labels=None):
+    def sort_labels(self, labeled_mask, n_labels=None, by='bbox_size'):
         if n_labels is None:
             n_labels = labeled_mask.max()
         res = []
         for label in range(1, n_labels + 1):
-            res.append([label, np.count_nonzero(labeled_mask == label)])
+            if by == 'area':
+                res.append([label, np.count_nonzero(labeled_mask == label)])
+            elif by == 'bbox_size':
+                bbox = self.get_region_bbox(labeled_mask == label)
+                area = bbox.height * bbox.width
+                res.append([label, area])
+            else:
+                raise ValueError('{} is invalid.'.format(by))
         res = np.array(res)
         res = res[np.argsort(res[:, 1])[::-1]]
         return res[:, 0].astype(int)
