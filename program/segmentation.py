@@ -24,7 +24,7 @@ class BubbleSegmentor:
     def set_camera_image(self, img):
         self.image = img
 
-    def run(self):
+    def run(self, return_original_scale=True):
         self.run_downsample()
         image_blur = ndi.gaussian_filter(self.image, 2 / self.downsample)
         thresh = skimage.filters.threshold_otsu(image_blur)
@@ -42,13 +42,9 @@ class BubbleSegmentor:
                 self.cell_window_mask = self.estimate_cell_window_mask(mask_this_label)
             if not self.should_exclude(mask_this_label):
                 self.final_mask += mask_this_label
-        fig, ax = plt.subplots(1, 2)
-        ax[0].imshow(self.image)
-        ax[0].imshow(self.cell_window_mask, alpha=0.5)
-        ax[1].imshow(self.image)
-        ax[1].imshow(self.final_mask, alpha=0.8)
-        plt.show()
-        self.run_backsample()
+        if return_original_scale:
+            self.run_backsample()
+        return self.final_mask
 
     def estimate_cell_window_bbox(self, mask):
         bbox = self.get_region_bbox(mask)
