@@ -47,3 +47,8 @@ class BoundingBox(list):
     def set_ex(self, v):
         self[3] = v
         self.ex = v
+
+    def generate_mask(self, image_size):
+        mask = np.zeros(image_size, dtype='bool')
+        mask[self.sy:self.ey, self.sx:self.ex] = True
+        return mask

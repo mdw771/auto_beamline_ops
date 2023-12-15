@@ -4,6 +4,7 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.ndimage as ndi
+import scipy.signal
 import skimage.transform
 import skimage.filters
 import sklearn.decomposition
@@ -11,20 +12,98 @@ import tqdm
 
 from bounding_box import BoundingBox
 from message_logger import logger
+from image_proc import *
 
 
-class BubbleSegmentor:
+class Segmentor:
 
     def __init__(self, downsample=4):
         self.image = None
         self.downsample = downsample
         self.orig_shape = None
         self.final_mask = None
-        self.cell_window_bbox = None
-        self.cell_window_mask = None
 
     def set_camera_image(self, img):
         self.image = img
+
+    def remove_kinks_on_arc(self, edge_mask, corner_threshold=0.8):
+        """
+        Remove the non-smooth or kink regions on an arc-shaped mask.
+
+        :param edge_mask: np.ndarray.
+        :param corner_threshold: float. Threshold to locate corners in the Harris corner map.
+        :return: np.ndarray.
+        """
+        edge_mask = edge_mask.astype(float)
+        corner_map = skimage.feature.corner_harris(edge_mask, sigma=12 / self.downsample)
+        corner_map = corner_map / corner_map.max()
+        corner_mask = corner_map > corner_threshold
+        corner_mask = ndi.binary_dilation(corner_mask, np.ones([5, 5]))
+        edge_mask[corner_mask] = 0
+        edge_regions, n_regions = ndi.label(edge_mask)
+        sorted_labels = self.sort_labels(edge_regions, n_regions, by='area')
+        edge_mask = edge_regions == sorted_labels[0]
+
+        return edge_mask
+
+    def get_edge_pixel_mask(self, mask):
+        mask = np.where(mask > 0, 1, 0)
+        mask_edge = ndi.binary_dilation(mask, np.ones([3, 3])) - mask
+        return mask_edge
+
+    def is_round(self, mask):
+        """
+        Calculate the eigenvalues of the principle axes of the non-zero elements in a given mask, then calculate
+        the ratio. If the ratio is close enough to 1, the distribution can be considered to be close enough to a disk.
+
+        :param mask: np.ndarray.
+        :return: bool.
+        """
+        eigen_value_ratio = self.calculate_region_principal_axis_eigenvalue_ratio(mask)
+        if eigen_value_ratio < 10:
+            return True
+        else:
+            return False
+
+    def sort_labels(self, labeled_mask, n_labels=None, by='bbox_size'):
+        if n_labels is None:
+            n_labels = labeled_mask.max()
+        res = []
+        for label in range(1, n_labels + 1):
+            if by == 'area':
+                res.append([label, np.count_nonzero(labeled_mask == label)])
+            elif by == 'bbox_size':
+                bbox = get_region_bbox(labeled_mask == label)
+                area = bbox.height * bbox.width
+                res.append([label, area])
+            else:
+                raise ValueError('{} is invalid.'.format(by))
+        res = np.array(res)
+        res = res[np.argsort(res[:, 1])[::-1]]
+        return res[:, 0].astype(int)
+
+    def run_downsample(self):
+        self.orig_shape = self.image.shape
+        if self.downsample == 1:
+            return
+        self.image = skimage.transform.resize(self.image, [x // self.downsample for x in self.image.shape], order=1)
+
+    def run_backsample(self):
+        if self.downsample == 1:
+            return
+        self.final_mask = skimage.transform.resize(self.final_mask, self.orig_shape, order=1)
+        self.final_mask = np.where(self.final_mask > 0.5, 1, 0)
+
+    def run(self, *args, **kwargs):
+        return
+
+
+class BubbleSegmentor(Segmentor):
+
+    def __init__(self, downsample=4):
+        super().__init__(downsample=downsample)
+        self.cell_window_bbox = None
+        self.cell_window_mask = None
 
     def run(self, return_original_scale=True):
         self.run_downsample()
@@ -62,7 +141,7 @@ class BubbleSegmentor:
         return labels_sorted
 
     def estimate_cell_window_bbox(self, mask):
-        bbox = self.get_region_bbox(mask)
+        bbox = get_region_bbox(mask)
         window_radius = max(bbox.height, bbox.width) / 2
         if bbox.height < bbox.width:
             bbox.set_sy(int(np.round(bbox.ey - 2 * window_radius)))
@@ -84,37 +163,13 @@ class BubbleSegmentor:
         x = x[::40 // self.downsample]
         if len(y) < 3:
             raise ValueError('There are not enough pixels for fitting circle. Is the window area too small?')
-        yc, xc, r = self.fit_circle(np.stack([y, x], axis=1))
+        yc, xc, r = fit_circle(np.stack([y, x], axis=1))
         y, x = np.mgrid[:mask.shape[0], :mask.shape[1]]
         circ_mask = (y - yc) ** 2 + (x - xc) ** 2 <= r ** 2
         return circ_mask
 
-    def remove_kinks_on_arc(self, edge_mask, corner_threshold=0.8):
-        """
-        Remove the non-smooth or kink regions on an arc-shaped mask.
-
-        :param edge_mask: np.ndarray.
-        :return: np.ndarray.
-        """
-        edge_mask = edge_mask.astype(float)
-        corner_map = skimage.feature.corner_harris(edge_mask, sigma=12 / self.downsample)
-        corner_map = corner_map / corner_map.max()
-        corner_mask = corner_map > corner_threshold
-        corner_mask = ndi.binary_dilation(corner_mask, np.ones([5, 5]))
-        edge_mask[corner_mask] = 0
-        edge_regions, n_regions = ndi.label(edge_mask)
-        sorted_labels = self.sort_labels(edge_regions, n_regions, by='area')
-        edge_mask = edge_regions == sorted_labels[0]
-
-        return edge_mask
-
-    def get_edge_pixel_mask(self, mask):
-        mask = np.where(mask > 0, 1, 0)
-        mask_edge = ndi.binary_dilation(mask, np.ones([3, 3])) - mask
-        return mask_edge
-
     def should_exclude(self, mask):
-        # bbox = self.get_region_bbox(mask)
+        # bbox = get_region_bbox(mask)
         # if self.cell_window_bbox.is_isolated_from(bbox):
         if not self.intersects_with_cell_window_mask(mask):
             return True
@@ -130,25 +185,6 @@ class BubbleSegmentor:
         else:
             return False
 
-    @staticmethod
-    def get_region_bbox(mask):
-        ys, xs = np.nonzero(mask)
-        return BoundingBox([ys.min(), xs.min(), ys.max() + 1, xs.max() + 1])
-
-    def is_round(self, mask):
-        """
-        Calculate the eigenvalues of the principle axes of the non-zero elements in a given mask, then calculate
-        the ratio. If the ratio is close enough to 1, the distribution can be considered to be close enough to a disk.
-
-        :param mask: np.ndarray.
-        :return: bool.
-        """
-        eigen_value_ratio = self.calculate_region_principal_axis_eigenvalue_ratio(mask)
-        if eigen_value_ratio < 10:
-            return True
-        else:
-            return False
-
     def calculate_region_principal_axis_eigenvalue_ratio(self, mask):
         pca = sklearn.decomposition.PCA(n_components=2)
         y_inds, x_inds = np.nonzero(mask)
@@ -157,42 +193,47 @@ class BubbleSegmentor:
         eigen_value_ratio = res.explained_variance_ratio_[0] / res.explained_variance_ratio_[1]
         return eigen_value_ratio
 
-    def sort_labels(self, labeled_mask, n_labels=None, by='bbox_size'):
-        if n_labels is None:
-            n_labels = labeled_mask.max()
-        res = []
-        for label in range(1, n_labels + 1):
-            if by == 'area':
-                res.append([label, np.count_nonzero(labeled_mask == label)])
-            elif by == 'bbox_size':
-                bbox = self.get_region_bbox(labeled_mask == label)
-                area = bbox.height * bbox.width
-                res.append([label, area])
-            else:
-                raise ValueError('{} is invalid.'.format(by))
-        res = np.array(res)
-        res = res[np.argsort(res[:, 1])[::-1]]
-        return res[:, 0].astype(int)
 
-    def fit_circle(self, point_list):
-        point_list = np.array(point_list)
-        y, x = point_list[:, 0], point_list[:, 1]
-        a_mat = np.stack([y, x, np.ones_like(y)], axis=1)
-        b_vec = y ** 2 + x ** 2
-        x_vec = np.linalg.pinv(a_mat) @ b_vec
-        yc = x_vec[0] / 2
-        xc = x_vec[1] / 2
-        r = np.sqrt(x_vec[2] + yc ** 2 + xc ** 2)
-        return yc, xc, r
+class CapillarySegmentor(Segmentor):
 
-    def run_downsample(self):
-        self.orig_shape = self.image.shape
-        if self.downsample == 1:
-            return
-        self.image = skimage.transform.resize(self.image, [x // self.downsample for x in self.image.shape], order=1)
+    def __init__(self, downsample=4):
+        super().__init__(downsample=downsample)
+        self.safety_margin = (20 // self.downsample, 40 // self.downsample)
+        self.roi_bbox = BoundingBox([0, 0, 1, 1])
+        self.estimated_width = 800 // self.downsample
 
-    def run_backsample(self):
-        if self.downsample == 1:
-            return
-        self.final_mask = skimage.transform.resize(self.final_mask, self.orig_shape, order=1)
-        self.final_mask = np.where(self.final_mask > 0.5, 1, 0)
+    def run(self, return_original_scale=True):
+        self.run_downsample()
+        self.determine_x_range()
+        self.determine_y_range()
+
+        self.final_mask = self.roi_bbox.generate_mask(self.image.shape)
+        return self.final_mask
+
+    def determine_x_range(self):
+        std_y = np.std(self.image, axis=0)
+        std_y = ndi.gaussian_filter(std_y, 2)
+        grad_std_y = ndi.gaussian_filter(std_y, 1, order=1)
+        grad_peaks, _ = scipy.signal.find_peaks(grad_std_y, height=grad_std_y.max() * 0.1)
+        loc_window = find_window_location_with_most_peaks(self.estimated_width, grad_peaks)
+        peaks_in_window = grad_peaks[np.logical_and(
+            grad_peaks >= loc_window, grad_peaks <= loc_window + self.estimated_width)]
+        x_st, x_end = peaks_in_window.min(), peaks_in_window.max()
+
+        x_st += self.safety_margin[1]
+        x_end -= self.safety_margin[1]
+        self.roi_bbox.set_sx(x_st)
+        self.roi_bbox.set_ex(x_end)
+
+    def determine_y_range(self):
+        img_cropped = self.image[:, self.roi_bbox.sx:self.roi_bbox.ex]
+        std_x = np.std(img_cropped, axis=1)
+        std_x = ndi.gaussian_filter(std_x, 2)
+        grad_std_x = ndi.gaussian_filter(std_x, 1, order=1)
+        grad_std_x = np.abs(grad_std_x)
+        grad_peaks, _ = scipy.signal.find_peaks(grad_std_x, height=grad_std_x.max() * 0.2)
+        sy = grad_peaks[-1]
+        sy += self.safety_margin[0]
+        self.roi_bbox.set_sy(sy)
+        self.roi_bbox.set_ey(self.image.shape[0])
+
