@@ -42,3 +42,16 @@ def find_window_location_with_most_peaks(window_size, peak_list):
         pos_count[i, 1] = np.count_nonzero(np.logical_and(peak_list >= v1, peak_list <= v2))
     i_max = np.argmax(pos_count[:, 1])
     return int(pos_count[i_max, 0])
+
+
+def point_to_line_distance(pts, line_pt_1, line_pt_2):
+    """
+    Find the perpendicular distance from an array of points to a vector.
+
+    :param pts: np.ndarray. Array of point.
+    :param line_pt_1: np.ndarray. The first point on the line.
+    :param line_pt_2: np.ndarray. The second point on the line.
+    :return: A [pts.shape[0],] array.
+    """
+    d = np.abs(np.cross(line_pt_2 - line_pt_1, pts - line_pt_1) / np.linalg.norm(line_pt_2 - line_pt_1))
+    return d

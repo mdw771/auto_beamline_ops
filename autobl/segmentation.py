@@ -8,6 +8,7 @@ import scipy.signal
 import skimage.transform
 import skimage.filters
 import sklearn.decomposition
+import sklearn.neighbors
 import tqdm
 
 from autobl.bounding_box import BoundingBox
@@ -15,9 +16,134 @@ from autobl.message_logger import logger
 from autobl.image_proc import *
 
 
+class SegmentationAlgorithmSelector:
+
+    option_defaults = {
+        'residue_threshold': 0.2,
+        'sinogram_std_threshold': 6
+    }
+
+    def __init__(self, downsample=4, method='shape_fit', options=None, *args, **kwargs):
+        self.algorithm = None
+        self.image = None
+        self.downsample = downsample
+        self.orig_shape = None
+        self.method = method
+        self.options = options if options is not None else {}
+        self.debug = False
+
+    def get_option_value(self, key):
+        if key in self.options.keys():
+            return self.options[key]
+        else:
+            return self.__class__.option_defaults[key]
+
+    def set_camera_image(self, img):
+        self.image = img
+        self.orig_shape = img.shape
+
+    def run_downsample(self):
+        self.orig_shape = self.image.shape
+        if self.downsample == 1:
+            return
+        self.image = skimage.transform.resize(self.image, [x // self.downsample for x in self.image.shape], order=1)
+
+    def find_and_fit_circle(self):
+        bubble_segmentor = BubbleSegmentor(downsample=1)
+        bubble_segmentor.set_camera_image(self.image)
+        bubble_segmentor.run()
+        return bubble_segmentor.cell_window_mask_residue
+
+    def xy2ij(self, xy_coords, y_range, x_range, shape, return_pixel_sizes=False):
+        psize = np.array([(y_range[1] - y_range[0]) / shape[0],
+                          (x_range[1] - x_range[0]) / shape[1]])
+        ij_coords = np.array([(xy_coords[0] - y_range[0]) / psize[0], (xy_coords[1] - x_range[0]) / psize[1]])
+        if return_pixel_sizes:
+            return ij_coords, psize
+        else:
+            return ij_coords
+
+    def run_selection_by_shape_fitting(self):
+        residue_threshold = self.get_option_value('residue_threshold')
+        fit_residue = self.find_and_fit_circle()
+        if fit_residue > residue_threshold:
+            return CapillarySegmentor
+        else:
+            return BubbleSegmentor
+
+    def run_selection_by_gradient_distribution(self):
+        sino_std_threshold = self.get_option_value('sinogram_std_threshold')
+
+        grad_y = ndi.sobel(self.image, axis=0)
+        grad_x = ndi.sobel(self.image, axis=1)
+        grad_y_centered = grad_y - np.mean(grad_y)
+        grad_x_centered = grad_x - np.mean(grad_x)
+        grad_data = np.stack([grad_y_centered.reshape(-1), grad_x_centered.reshape(-1)], axis=-1)
+        grad_data = grad_data[::4]
+
+        y_coords = np.linspace(grad_data[:, 0].min(), grad_data[:, 0].max(), 30)
+        x_coords = np.linspace(grad_data[:, 1].min(), grad_data[:, 1].max(), 30)
+        xx, yy = np.meshgrid(x_coords, y_coords)
+
+        bw = ((grad_data[:, 0].max() - grad_data[:, 0].min()) + (grad_data[:, 1].max() - grad_data[:, 1].min())) / 2
+        bw = bw * 0.1
+        kde = sklearn.neighbors.KernelDensity(kernel='linear', bandwidth=bw)
+        kde.fit(grad_data)
+        pdf = kde.score_samples(np.stack([yy.reshape(-1), xx.reshape(-1)], axis=-1))
+
+        pdf = pdf.reshape(30, 30)
+        finite_mask = np.isfinite(pdf)
+        pdf_finite = pdf[finite_mask]
+        thresh = np.percentile(pdf_finite, 0.5)
+        pdf[pdf < thresh] = 0
+
+        center_pos, psize = self.xy2ij(np.mean(grad_data, axis=0),
+                                       [grad_data[:, 0].min(), grad_data[:, 0].max()],
+                                       [grad_data[:, 1].min(), grad_data[:, 1].max()],
+                                       pdf.shape, return_pixel_sizes=True)
+        center_pos = np.round(center_pos).astype(int)
+        rad = np.min([pdf.shape[0] - center_pos[0], center_pos[0], pdf.shape[1] - center_pos[1], center_pos[1]])
+        pdf_cropped = pdf[center_pos[0] - rad:center_pos[0] + rad, center_pos[1] - rad:center_pos[1] + rad]
+        if psize[0] / psize[1] != 1:
+            pdf_cropped = ndi.zoom(pdf_cropped, zoom=[1, psize[1] / psize[0]])
+
+        sinogram = skimage.transform.radon(pdf_cropped, theta=np.linspace(0., 180., 90), circle=True)
+        sinogram_profile = sinogram[sinogram.shape[0] // 2, :]
+        sino_std = np.std(sinogram_profile)
+        if sino_std > sino_std_threshold:
+            self.algorithm = CapillarySegmentor
+        else:
+            self.algorithm = BubbleSegmentor
+
+        if self.debug:
+            fig, ax = plt.subplots(1, 1)
+            ax.set_aspect('equal')
+            plt.scatter(grad_x.reshape(-1), grad_y.reshape(-1))
+            plt.show()
+
+            fig, ax = plt.subplots(1, 1)
+            ax.set_aspect('equal')
+            im = plt.imshow(pdf_cropped)
+            plt.colorbar(im)
+            plt.show()
+
+        return self.algorithm
+
+    def run_selection(self):
+        self.run_downsample()
+        if self.method == 'shape_fit':
+            algorithm_class = self.run_selection_by_shape_fitting()
+        elif self.method == 'gradient_distribution':
+            algorithm_class = self.run_selection_by_gradient_distribution()
+        else:
+            raise ValueError('{} is not a valid method.'.format(self.method))
+        self.algorithm = algorithm_class
+        return algorithm_class
+
+
 class Segmentor:
 
-    def __init__(self, downsample=4):
+    def __init__(self, downsample=4, *args, **kwargs):
         self.image = None
         self.downsample = downsample
         self.orig_shape = None
@@ -100,10 +226,11 @@ class Segmentor:
 
 class BubbleSegmentor(Segmentor):
 
-    def __init__(self, downsample=4):
-        super().__init__(downsample=downsample)
+    def __init__(self, downsample=4, *args, **kwargs):
+        super().__init__(downsample=downsample, *args, **kwargs)
         self.cell_window_bbox = None
         self.cell_window_mask = None
+        self.cell_window_mask_residue = 0
 
     def run(self, return_original_scale=True):
         self.run_downsample()
@@ -166,6 +293,7 @@ class BubbleSegmentor(Segmentor):
         yc, xc, r = fit_circle(np.stack([y, x], axis=1))
         y, x = np.mgrid[:mask.shape[0], :mask.shape[1]]
         circ_mask = (y - yc) ** 2 + (x - xc) ** 2 <= r ** 2
+        self.cell_window_mask_residue = np.mean((circ_mask.astype(float) - mask.astype(float)) ** 2)
         return circ_mask
 
     def should_exclude(self, mask):
@@ -196,8 +324,8 @@ class BubbleSegmentor(Segmentor):
 
 class CapillarySegmentor(Segmentor):
 
-    def __init__(self, downsample=4):
-        super().__init__(downsample=downsample)
+    def __init__(self, downsample=4, *args, **kwargs):
+        super().__init__(downsample=downsample, *args, **kwargs)
         self.safety_margin = (20 // self.downsample, 40 // self.downsample)
         self.roi_bbox = BoundingBox([0, 0, 1, 1])
         self.estimated_width = 800 // self.downsample
