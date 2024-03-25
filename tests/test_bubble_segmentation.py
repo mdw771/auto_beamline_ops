@@ -1,14 +1,11 @@
-import sys
 import os
-import glob
 import argparse
 
 import numpy as np
 import tifffile
 from skimage.color import rgb2gray
-import matplotlib.pyplot as plt
 
-import autobl.segmentation
+import autobl.analysis.segmentation
 
 
 def preprocess(img):
@@ -23,7 +20,7 @@ def test_bubble_segmentation(generate_gold=False):
     img = tifffile.imread('data/saxs_beamline/cell_bw_1s_000.tif')
     img = preprocess(img)
 
-    segmentor = autobl.segmentation.BubbleSegmentor(downsample=4)
+    segmentor = autobl.analysis.segmentation.BubbleSegmentor(downsample=4)
     segmentor.set_camera_image(img)
     scannable_mask = segmentor.run(return_original_scale=False)
 
