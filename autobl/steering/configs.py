@@ -26,7 +26,11 @@ class ExperimentGuideConfig(Config):
     """Upper bound of sampling points to be suggested."""
 
     num_candidates: int = 1
-    """Number of sampling points to suggest."""
+    """
+    Number of sampling points to suggest. If an analytical acquisition function built in BoTorch is used, this 
+    must be 1; to get multiple candidates, either use Monte-Carlo-based acquisition functions (e.g., 
+    those whose names start with "q" like `qUpperConfidenceBound`), or define a custom acquisition function.
+    """
 
     def __post_init__(self):
         if self.dim_measurement_space is None:

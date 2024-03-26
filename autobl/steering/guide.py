@@ -69,6 +69,9 @@ class GPExperimentGuide(ExperimentGuide):
         self.record_data(x_train, y_train)
 
     def build_acquisition_function(self):
+        if issubclass(self.config.acquisition_function_class, botorch.acquisition.AnalyticAcquisitionFunction):
+            assert self.config.num_candidates == 1, ('Since an analytical acquisition function is used, '
+                                                     'num_candidates must be 1.')
         self.acquisition_function = self.config.acquisition_function_class(
             self.model,
             **self.config.acquisition_function_params
