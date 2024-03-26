@@ -1,3 +1,6 @@
+"""
+Ref: https://github.com/saugatkandel/AI-ML_Control_System/blob/66ed73afa80d2746bae8126d0cbe3c0ea570f141/work_directory/34-ID/jupyter/botorch_test/turbo_1.ipynb#L34
+"""
 import botorch
 import gpytorch
 import numpy as np
@@ -17,16 +20,16 @@ class ExperimentGuide:
     def suggest(self):
         pass
 
-    def update(self):
+    def update(self, *args, **kwargs):
         pass
 
     def get_bounds(self):
         lb = self.config.lower_bounds
         if lb is None:
-            lb = torch.tensor([-np.inf] * len(self.config.measurement_space_dims))
+            lb = torch.tensor([-np.inf] * self.config.dim_measurement_space)
         ub = self.config.upper_bounds
         if ub is None:
-            ub = torch.tensor([np.inf] * len(self.config.measurement_space_dims))
+            ub = torch.tensor([np.inf] * self.config.dim_measurement_space)
         if not isinstance(lb, torch.Tensor):
             lb = torch.from_numpy(lb)
         if not isinstance(ub, torch.Tensor):
@@ -38,36 +41,38 @@ class GPExperimentGuide(ExperimentGuide):
 
     def __init__(self, config: GPExperimentGuideConfig, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
+        assert isinstance(self.config, GPExperimentGuideConfig)
         self.model = None
         self.fitting_func = None
         self.acquisition_function = None
         self.data_x = torch.tensor([])
         self.data_y = torch.tensor([])
 
-    def build(self, initial_data):
+    def build(self, x_train=None, y_train=None):
         """
         Build model, fit hyperparameters, and initialize other variables.
 
-        :param initial_data: Optional[tuple[np.ndarray, np.ndarray]]. Features and observation data for training
-               the GP model to find hyperparameters (e.g., kernel paraemters).
+        :param x_train: Optional[Tensor]. Features of the data for training the GP model and finding hyperparameters
+                        (e.g., kernel paraemters).
+        :param y_train: Optional[Tensor]. Observations of the data for training the GP model and finding hyperparameters
+                        (e.g., kernel paraemters).
         """
-        self.build_model(train_data=initial_data)
+        self.build_model(x_train, y_train)
         self.build_acquisition_function()
 
     def record_data(self, x, y):
         self.data_x = torch.concatenate([self.data_x, x])
         self.data_y = torch.concatenate([self.data_y, y])
 
-    def build_model(self, train_data):
-        x_train, y_train = train_data
-        self.model = self.config.model_class(x_train, y_train, **self.config.model_params)
-        self.fitting_func = gpytorch.mlls.ExactMarginalLogLikelihood(self.model.likelihood, self.model)
-        botorch.fit.fit_gpytorch_mll(self.fitting_func)
+    def build_model(self, x_train, y_train):
+        self.train_model(x_train, y_train)
         self.record_data(x_train, y_train)
 
     def build_acquisition_function(self):
-        self.acquisition_function = self.config.acquisition_function_class(self.model,
-                                                                           **self.config.acquisition_function_params)
+        self.acquisition_function = self.config.acquisition_function_class(
+            self.model,
+            **self.config.acquisition_function_params
+        )
 
     def suggest(self):
         candidate, acq_val = botorch.optim.optimize_acqf(
@@ -79,6 +84,26 @@ class GPExperimentGuide(ExperimentGuide):
         )
         return candidate
 
+    def update(self, x_data, y_data):
+        """
+        Update the model using newly measured data.
+
+        :param x_data: Tensor. Features of new data.
+        :param y_data: Tensor. Observations of new data.
+        """
+        self.record_data(x_data, y_data)
+        self.model = self.model.condition_on_observations(x_data, y_data)
+        # condition_on_observations does not make in-place changes to the model object but creates a new object, so
+        # we need to reset the model object in the acquisition function.
+        self.build_acquisition_function()
+
+    def train_model(self, x_data, y_data):
+        # Create model and compute covariance matrix.
+        self.model = self.config.model_class(x_data, y_data, **self.config.model_params)
+        # Fit hyperparameters.
+        self.fitting_func = gpytorch.mlls.ExactMarginalLogLikelihood(self.model.likelihood, self.model)
+        botorch.fit.fit_gpytorch_mll(self.fitting_func)
+
     def plot_posterior(self, x):
         """
         Plot the posterior mean and standard deviation of the GP model. Only works with 1-dimension feature space.
@@ -89,12 +114,16 @@ class GPExperimentGuide(ExperimentGuide):
             x = torch.from_numpy(x)
         posterior = self.model.posterior(x)
         mu = posterior.mean.reshape(-1).cpu().detach().numpy()
-        sigma2 = posterior.variance.reshape(-1).cpu().detach().numpy()
+        sigma = posterior.variance.clamp_min(1e-12).sqrt().reshape(-1).cpu().detach().numpy()
+        acq = self.acquisition_function(x.view(-1, 1, 1)).reshape(-1).cpu().detach().numpy()
 
         if isinstance(x, torch.Tensor):
-            x = x.cpu().numpy()
-        fig, ax = plt.subplots(1, 1)
-        ax.plot(x, mu)
-        ax.fill_between(x, mu - np.sqrt(sigma2), mu + np.sqrt(sigma2), alpha=0.5)
-        ax.scatter(self.data_x.reshape(-1), self.data_y.reshape(-1))
+            x = x.cpu().detach().numpy()
+        fig, ax = plt.subplots(1, 2, figsize=(9, 4))
+        ax[0].plot(x, mu)
+        ax[0].fill_between(x, mu - sigma, mu + sigma, alpha=0.5)
+        ax[0].scatter(self.data_x.reshape(-1), self.data_y.reshape(-1))
+        ax[0].set_title('Posterior mean and $+/-\sigma$ interval')
+        ax[1].plot(x, acq)
+        ax[1].set_title('Acquisition function')
         plt.show()

@@ -16,8 +16,8 @@ class Config:
 @dataclasses.dataclass
 class ExperimentGuideConfig(Config):
 
-    measurement_space_dims: Sequence[int, ...] = None
-    """Dimensions of the space where measurements are performed."""
+    dim_measurement_space: int = None
+    """Number of dimensions of the space where measurements are performed (i.e., the feature space)."""
 
     lower_bounds: Sequence[float, ...] = None
     """Lower bound of sampling points to be suggested."""
@@ -29,8 +29,8 @@ class ExperimentGuideConfig(Config):
     """Number of sampling points to suggest."""
 
     def __post_init__(self):
-        if self.measurement_space_dims is None:
-            raise TypeError("Missing required argument: 'measurement_space_dims'")
+        if self.dim_measurement_space is None:
+            raise TypeError("Missing required argument: 'dim_measurement_space'")
 
 
 @dataclasses.dataclass
