@@ -45,6 +45,7 @@ class GPExperimentGuide(ExperimentGuide):
         self.model = None
         self.fitting_func = None
         self.acquisition_function = None
+        self.optimizer = None
         self.data_x = torch.tensor([])
         self.data_y = torch.tensor([])
 
@@ -59,6 +60,7 @@ class GPExperimentGuide(ExperimentGuide):
         """
         self.build_model(x_train, y_train)
         self.build_acquisition_function()
+        self.build_optimizer()
 
     def record_data(self, x, y):
         self.data_x = torch.concatenate([self.data_x, x])
@@ -77,14 +79,15 @@ class GPExperimentGuide(ExperimentGuide):
             **self.config.acquisition_function_params
         )
 
-    def suggest(self):
-        candidate, acq_val = botorch.optim.optimize_acqf(
-            self.acquisition_function,
+    def build_optimizer(self):
+        self.optimizer = self.config.optimizer_class(
             bounds=self.get_bounds(),
-            num_restarts=5,
-            q=self.config.num_candidates,
-            raw_samples=10
+            num_candidates=self.config.num_candidates,
+            **self.config.optimizer_params
         )
+
+    def suggest(self):
+        candidate, acq_val = self.optimizer.maximize(self.acquisition_function)
         return candidate
 
     def update(self, x_data, y_data):

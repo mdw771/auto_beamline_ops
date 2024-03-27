@@ -1,9 +1,12 @@
 import dataclasses
-from collections.abc import Sequence
+from collections.abc import Sequence, Callable
 from typing import Type, Optional, Any
+import json
 
 import botorch
 import gpytorch
+
+from autobl.steering.optimization import Optimizer, BoTorchOptimizer
 
 
 @dataclasses.dataclass
@@ -11,6 +14,18 @@ class Config:
 
     random_seed: Any = 123
     """Random seed."""
+
+    def dictionarize(self):
+        d = {}
+        for key in self.__dict__.keys():
+            if isinstance(self.__dict__[key], Config):
+                d[key] = self.__dict__[key].dictionarize()
+            else:
+                d[key] = self.__dict__[key]
+        return d
+
+    def to_json(self, fname):
+        json.dump(self.dictionarize(), open(fname, 'w'))
 
 
 @dataclasses.dataclass
@@ -52,3 +67,15 @@ class GPExperimentGuideConfig(ExperimentGuideConfig):
 
     acquisition_function_params: dict = dataclasses.field(default_factory=dict)
     """Parameters of the acquisition function."""
+
+    optimizer_class: Type[Optimizer] = BoTorchOptimizer
+    """
+    The function handle of the optimization function. The function should have the acquisition function,
+    q (number of candidates) and other parameters as arguments.
+    """
+
+    optimizer_params: dict = dataclasses.field(default_factory=dict)
+    """
+    Parameters of the optimizer constructor, not including `bounds`, `num_candidates` (these arguments are filled
+    in in the ExperimentGuide class based on other config settings).
+    """
