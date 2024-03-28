@@ -39,7 +39,9 @@ if __name__ == '__main__':
         model_params={'covar_module': gpytorch.kernels.MaternKernel(1.5)},
         acquisition_function_class=GradientAwarePosteriorStandardDeviation,
         # acquisition_function_class=PosteriorStandardDeviation,
-        acquisition_function_params={'phi': 0.001},
+        # acquisition_function_class=qUpperConfidenceBound,
+        acquisition_function_params={'phi': 0.01},
+        # acquisition_function_params={'beta': 0.1},
         lower_bounds=torch.zeros(train_x.shape[1]),
         upper_bounds=torch.ones(train_x.shape[1])
     )

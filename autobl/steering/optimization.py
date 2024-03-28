@@ -39,25 +39,25 @@ class Optimizer:
     def update_sampled_points(self, pts):
         self.measured_points = torch.cat([self.measured_points, pts], dim=0)
 
-    def remove_points_measured_before(self, pts):
+    def find_duplicate_point_mask(self, pts):
         """
-        Remove points that have been measured in the past.
+        Returns a mask that has the shape of `pts.shape[:-1]`, where False elements represent points that have aLready
+        been measured in the past and should not be measured again.
 
-        :param pts: Tensor. Tensor of suggested points with shape `[n, d]`.
-        :return: Tensor, Tensor. List of points with duplicating points removed, and the mask of points to keep.
+        :param pts: Tensor. Tensor of suggested points with shape `[n, q, d]`.
+        :return: Tensor. A mask indicating non-duplicating points.
         """
         if len(self.measured_points) == 0:
-            return pts, torch.ones(len(pts)).bool()
+            return torch.ones(pts.shape[:-1]).bool()
         diff_mat = torch.abs(pts[..., None] - self.measured_points)
         diff_mat = (diff_mat < self.duplicate_distance_threshold).int()
+        # The first sum is over feaature dim and the second is over measured_points.
         diff_mat = diff_mat.sum(-1).sum(-1).bool()
         mask = ~diff_mat
         if torch.count_nonzero(mask) == 0:
             warnings.warn('All suggested points have been measured in the past! ({})'.format(pts))
-            mask = torch.ones(len(pts)).bool()
-        else:
-            pts = pts[mask]
-        return pts, mask
+            mask = torch.ones(pts.shape[:-1]).bool()
+        return mask
 
 
 class BoTorchOptimizer(Optimizer):
@@ -119,23 +119,36 @@ class BoTorchOptimizer(Optimizer):
 
     def maximize(self, acquisition_function: AcquisitionFunction):
         """
-        Maximize the acquisition function.
+        Maximize the acquisition function. Returns the points of optima, and the corresponding acquisition
+        function value. The returned points have shape `[num_candidates = q, d]`. Regardless of `q`, the returned
+        acquisition value is always a scalar that gives the highest acquisition value among the `q` points.
+
+        The specified BoTorch optimization function is used to get the optima. By default, num_restarts is set to
+        a number greater than 1, so that the function returns a Tensor of [num_restarts, q, d]. Then, points
+        that have been measured in the past are identified, and the q-batches containing such points are excluded.
+        The suggested point(s) are then the q-batch that has the largest acquisition value among what remain.
+        The stored list of measured points is updated with the selected point(s).
 
         :param acquisition_function: AcquisitionFunction. The acquisition function to optimize.
-        :return: Tensor, Tensor. The locations and values of the optima.
+        :return: Tensor, Tensor[float]. The locations and value of the optima.
         """
         arg_dict = self.get_argument_dict()
+        # Returns optimal points in [num_restarts, q = num_candidates, d] and their
+        # acquisition values in [num_restarts] (there is no q dimension).
         pts, acq_vals = self.optim_func(acquisition_function, return_best_only=False, **arg_dict)
-        pts = pts.reshape([-1, pts.shape[-1]])
-        pts, mask = self.remove_points_measured_before(pts)
-        acq_vals = acq_vals[mask]
+        # nonduplicating_mask.shape = [num_restarts, q].
+        nonduplicating_mask = self.find_duplicate_point_mask(pts)
 
-        inds = torch.argsort(acq_vals, descending=True)
-        pts = pts[inds]
-        acq_vals = acq_vals[inds]
+        # Find the q-batch that has the highest acquisition value after exlcuding those containing already measured
+        # points.
+        q_selection_mask = nonduplicating_mask.int().sum(-1).bool()
+        acq_vals[~q_selection_mask] = -torch.inf
+        restart_ind = torch.argmax(acq_vals)
+        pts = pts[restart_ind]
+        acq_vals = acq_vals[restart_ind]
 
-        self.update_sampled_points(pts[0])
-        return pts[0:1], acq_vals[0:1]
+        self.update_sampled_points(pts)
+        return pts, acq_vals
 
     def get_required_params(self):
         return self.required_params[self.optim_func]
