@@ -1,4 +1,5 @@
 from typing import Callable, Optional
+import warnings
 
 import torch
 from torch import Tensor
@@ -19,12 +20,44 @@ class Optimizer:
     ) -> None:
         self.bounds = bounds
         self.num_candidates = num_candidates
+        self.measured_points = torch.tensor([], requires_grad=False)
+        self.duplicate_distance_threshold = self.get_duplicate_threshold()
 
     def maximize(self, acquisition_function: AcquisitionFunction):
         pass
 
     def get_required_params(self):
         return []
+
+    def get_duplicate_threshold(self):
+        assert self.bounds is not None
+        perc = 0.001
+        duplicate_distance_threshold = (self.bounds[1] - self.bounds[0]) * perc
+        duplicate_distance_threshold[torch.isinf(duplicate_distance_threshold)] = 0
+        return duplicate_distance_threshold
+
+    def update_sampled_points(self, pts):
+        self.measured_points = torch.cat([self.measured_points, pts], dim=0)
+
+    def remove_points_measured_before(self, pts):
+        """
+        Remove points that have been measured in the past.
+
+        :param pts: Tensor. Tensor of suggested points with shape `[n, d]`.
+        :return: Tensor, Tensor. List of points with duplicating points removed, and the mask of points to keep.
+        """
+        if len(self.measured_points) == 0:
+            return pts, torch.ones(len(pts)).bool()
+        diff_mat = torch.abs(pts[..., None] - self.measured_points)
+        diff_mat = (diff_mat < self.duplicate_distance_threshold).int()
+        diff_mat = diff_mat.sum(-1).sum(-1).bool()
+        mask = ~diff_mat
+        if torch.count_nonzero(mask) == 0:
+            warnings.warn('All suggested points have been measured in the past! ({})'.format(pts))
+            mask = torch.ones(len(pts)).bool()
+        else:
+            pts = pts[mask]
+        return pts, mask
 
 
 class BoTorchOptimizer(Optimizer):
@@ -92,7 +125,17 @@ class BoTorchOptimizer(Optimizer):
         :return: Tensor, Tensor. The locations and values of the optima.
         """
         arg_dict = self.get_argument_dict()
-        return self.optim_func(acquisition_function, **arg_dict)
+        pts, acq_vals = self.optim_func(acquisition_function, return_best_only=False, **arg_dict)
+        pts = pts.reshape([-1, pts.shape[-1]])
+        pts, mask = self.remove_points_measured_before(pts)
+        acq_vals = acq_vals[mask]
+
+        inds = torch.argsort(acq_vals, descending=True)
+        pts = pts[inds]
+        acq_vals = acq_vals[inds]
+
+        self.update_sampled_points(pts[0])
+        return pts[0:1], acq_vals[0:1]
 
     def get_required_params(self):
         return self.required_params[self.optim_func]
