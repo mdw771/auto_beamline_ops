@@ -31,7 +31,7 @@ class Optimizer:
 
     def get_duplicate_threshold(self):
         assert self.bounds is not None
-        perc = 0.001
+        perc = 1e-3
         duplicate_distance_threshold = (self.bounds[1] - self.bounds[0]) * perc
         duplicate_distance_threshold[torch.isinf(duplicate_distance_threshold)] = 0
         return duplicate_distance_threshold

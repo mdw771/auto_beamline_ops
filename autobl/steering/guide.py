@@ -4,12 +4,16 @@ Ref: https://github.com/saugatkandel/AI-ML_Control_System/blob/66ed73afa80d2746b
 import logging
 
 import botorch
+from botorch.models.transforms.outcome import Standardize
+from botorch.models.transforms.input import Normalize
 import gpytorch
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
 from autobl.steering.configs import *
+from autobl.util import *
+
 
 class ExperimentGuide:
 
@@ -50,6 +54,8 @@ class GPExperimentGuide(ExperimentGuide):
         self.optimizer = None
         self.data_x = torch.tensor([])
         self.data_y = torch.tensor([])
+        self.input_transform = None
+        self.outcome_transform = None
 
     def build(self, x_train=None, y_train=None):
         """
@@ -60,15 +66,21 @@ class GPExperimentGuide(ExperimentGuide):
         :param y_train: Optional[Tensor]. Observations of the data for training the GP model and finding hyperparameters
                         (e.g., kernel paraemters).
         """
+        self.build_transform()
         self.build_model(x_train, y_train)
         self.build_acquisition_function()
         self.build_optimizer()
+
+    def build_transform(self):
+        self.input_transform = Normalize(d=self.config.dim_measurement_space)
+        self.outcome_transform = Standardize(m=self.config.dim_measurement_space)
 
     def record_data(self, x, y):
         self.data_x = torch.concatenate([self.data_x, x])
         self.data_y = torch.concatenate([self.data_y, y])
 
     def build_model(self, x_train, y_train):
+        x_train, y_train = self.transform_data(x_train, y_train, train=True)
         self.train_model(x_train, y_train)
         self.record_data(x_train, y_train)
 
@@ -88,6 +100,38 @@ class GPExperimentGuide(ExperimentGuide):
             **self.config.optimizer_params
         )
 
+    def transform_data(self, x=None, y=None, train=False):
+        if x is not None:
+            x = x.double()
+        if y is not None:
+            y = y.double()
+        if x is not None and self.input_transform is not None:
+            if train:
+                self.input_transform.train()
+            else:
+                self.input_transform.eval()
+            x = self.input_transform(x)
+        if y is not None and self.outcome_transform is not None:
+            if train:
+                self.outcome_transform.train()
+            else:
+                self.outcome_transform.eval()
+            y, _ = self.outcome_transform(y)
+        return x, y
+
+    def untransform_data(self, x=None, y=None):
+        if x is not None and self.input_transform is not None:
+            self.input_transform.training = False
+            x = self.input_transform.untransform(x)
+        if y is not None and self.outcome_transform is not None:
+            self.outcome_transform.training = False
+            y, _ = self.outcome_transform.untransform(y)
+        return x, y
+
+    def untransform_posterior(self, posterior):
+        posterior = self.outcome_transform.untransform_posterior(posterior)
+        return posterior
+
     def suggest(self):
         candidate, acq_val = self.optimizer.maximize(self.acquisition_function)
         return candidate
@@ -99,6 +143,7 @@ class GPExperimentGuide(ExperimentGuide):
         :param x_data: Tensor. Features of new data.
         :param y_data: Tensor. Observations of new data.
         """
+        x_data, y_data = self.transform_data(x_data, y_data, train=False)
         self.record_data(x_data, y_data)
         self.model = self.model.condition_on_observations(x_data, y_data)
         # condition_on_observations does not make in-place changes to the model object but creates a new object, so
@@ -110,12 +155,12 @@ class GPExperimentGuide(ExperimentGuide):
         self.model = self.config.model_class(x_data, y_data, **self.config.model_params)
         # Fit hyperparameters.
         logging.info('Kernel lengthscale before optimization (normalized & standardized): {}'.format(
-            self.model.covar_module.lengthscale)
+            to_numpy(self.model.covar_module.lengthscale))
         )
         self.fitting_func = gpytorch.mlls.ExactMarginalLogLikelihood(self.model.likelihood, self.model)
         botorch.fit.fit_gpytorch_mll(self.fitting_func)
         logging.info('Kernel lengthscale after optimization (normalized & standardized): {}'.format(
-            self.model.covar_module.lengthscale)
+            to_numpy(self.model.covar_module.lengthscale))
         )
 
     def plot_posterior(self, x):
@@ -128,10 +173,12 @@ class GPExperimentGuide(ExperimentGuide):
             x = torch.from_numpy(x)
         if x.ndim == 1:
             x = x[:, None]
-        posterior = self.model.posterior(x)
+        x_transformed, _ = self.transform_data(x, None, train=False)
+        posterior = self.model.posterior(x_transformed)
+        posterior = self.untransform_posterior(posterior)
         mu = posterior.mean.reshape(-1).cpu().detach().numpy()
         sigma = posterior.variance.clamp_min(1e-12).sqrt().reshape(-1).cpu().detach().numpy()
-        acq = self.acquisition_function(x.view(-1, 1, 1)).reshape(-1).cpu().detach().numpy()
+        acq = self.acquisition_function(x_transformed.view(-1, 1, 1)).reshape(-1).cpu().detach().numpy()
 
         if isinstance(x, torch.Tensor):
             x = x.cpu().detach().numpy()
@@ -139,7 +186,8 @@ class GPExperimentGuide(ExperimentGuide):
         fig, ax = plt.subplots(1, 2, figsize=(9, 4))
         ax[0].plot(x, mu)
         ax[0].fill_between(x, mu - sigma, mu + sigma, alpha=0.5)
-        ax[0].scatter(self.data_x.reshape(-1), self.data_y.reshape(-1))
+        data_x, data_y = self.untransform_data(self.data_x, self.data_y)
+        ax[0].scatter(data_x.reshape(-1), data_y.reshape(-1))
         ax[0].set_title('Posterior mean and $+/-\sigma$ interval')
         ax[1].plot(x, acq)
         ax[1].set_title('Acquisition function')

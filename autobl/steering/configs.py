@@ -79,3 +79,12 @@ class GPExperimentGuideConfig(ExperimentGuideConfig):
     Parameters of the optimizer constructor, not including `bounds`, `num_candidates` (these arguments are filled
     in in the ExperimentGuide class based on other config settings).
     """
+
+    def __post_init__(self):
+        super().__post_init__()
+        if 'input_transform' in self.model_params.keys():
+            raise ValueError("I see you specified input_transform in model_params. Don't do it! Data are normalized/"
+                             "standaridized in GPExperimentGuide automatically.")
+        if 'outcome_transform' in self.model_params.keys():
+            raise ValueError("I see you specified outcome_transform in model_params. Don't do it! Data are normalized/"
+                             "standaridized in GPExperimentGuide automatically.")
