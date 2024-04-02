@@ -1,6 +1,8 @@
 """
 Ref: https://github.com/saugatkandel/AI-ML_Control_System/blob/66ed73afa80d2746bae8126d0cbe3c0ea570f141/work_directory/34-ID/jupyter/botorch_test/turbo_1.ipynb#L34
 """
+import logging
+
 import botorch
 import gpytorch
 import numpy as np
@@ -107,8 +109,14 @@ class GPExperimentGuide(ExperimentGuide):
         # Create model and compute covariance matrix.
         self.model = self.config.model_class(x_data, y_data, **self.config.model_params)
         # Fit hyperparameters.
+        logging.info('Kernel lengthscale before optimization (normalized & standardized): {}'.format(
+            self.model.covar_module.lengthscale)
+        )
         self.fitting_func = gpytorch.mlls.ExactMarginalLogLikelihood(self.model.likelihood, self.model)
         botorch.fit.fit_gpytorch_mll(self.fitting_func)
+        logging.info('Kernel lengthscale after optimization (normalized & standardized): {}'.format(
+            self.model.covar_module.lengthscale)
+        )
 
     def plot_posterior(self, x):
         """
@@ -118,6 +126,8 @@ class GPExperimentGuide(ExperimentGuide):
         """
         if not isinstance(x, torch.Tensor):
             x = torch.from_numpy(x)
+        if x.ndim == 1:
+            x = x[:, None]
         posterior = self.model.posterior(x)
         mu = posterior.mean.reshape(-1).cpu().detach().numpy()
         sigma = posterior.variance.clamp_min(1e-12).sqrt().reshape(-1).cpu().detach().numpy()
@@ -125,6 +135,7 @@ class GPExperimentGuide(ExperimentGuide):
 
         if isinstance(x, torch.Tensor):
             x = x.cpu().detach().numpy()
+        x = np.squeeze(x)
         fig, ax = plt.subplots(1, 2, figsize=(9, 4))
         ax[0].plot(x, mu)
         ax[0].fill_between(x, mu - sigma, mu + sigma, alpha=0.5)
