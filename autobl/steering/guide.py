@@ -96,13 +96,45 @@ class GPExperimentGuide(ExperimentGuide):
             ub = torch.tensor([np.inf] * self.config.dim_measurement_space)
         if not isinstance(lb, torch.Tensor):
             lb = torch.from_numpy(lb)
-        # print(lb.shape)
-        # print(self.input_transform.bounds)
         lb, _ = self.transform_data(lb)
         if not isinstance(ub, torch.Tensor):
             ub = torch.from_numpy(ub)
         ub, _ = self.transform_data(ub)
         return torch.stack([lb, ub])
+
+    def scale_by_normalizer_bounds(self, x, dim=0):
+        """
+        Scale data by 1 / span_of_normalizer_bounds.
+
+        :param x: Any. The input data.
+        :param dim: int. Use the `dim`-th dimension of the normalizer bounds to calculate the scaling factor.
+                    If x has a shape of [n, ..., d] where d equals to the number of dimensions of the bounds,
+                    the scaling factors are calculated separately for each dimension and the `dim` argument is
+                    disregarded.
+        :return:
+        """
+        if isinstance(x, torch.Tensor) and x.ndim >= 2:
+            return x / (self.input_transform.bounds[1] - self.input_transform.bounds[0])
+        else:
+            s = self.input_transform.bounds[1][dim] - self.input_transform.bounds[0][dim]
+            return x / s
+
+    def unscale_by_normalizer_bounds(self, x, dim=0):
+        """
+        Scale data by span_of_normalizer_bounds.
+
+        :param x: Any. The input data.
+        :param dim: int. Use the `dim`-th dimension of the normalizer bounds to calculate the scaling factor.
+                    If x has a shape of [n, ..., d] where d equals to the number of dimensions of the bounds,
+                    the scaling factors are calculated separately for each dimension and the `dim` argument is
+                    disregarded.
+        :return:
+        """
+        if isinstance(x, torch.Tensor) and x.ndim >= 2:
+            return x * (self.input_transform.bounds[1] - self.input_transform.bounds[0])
+        else:
+            s = self.input_transform.bounds[1][dim] - self.input_transform.bounds[0][dim]
+            return x * s
 
     def transform_data(self, x=None, y=None, train=False):
         if x is not None:
@@ -174,7 +206,8 @@ class GPExperimentGuide(ExperimentGuide):
             to_numpy(self.model.covar_module.lengthscale))
         )
         if self.config.override_kernel_lengthscale is not None:
-            self.model.covar_module.lengthscale = self.config.override_kernel_lengthscale
+            self.model.covar_module.lengthscale = self.scale_by_normalizer_bounds(
+                self.config.override_kernel_lengthscale)
             logging.info('Kernel lengthscale (normalized & standardized) overriden to: {}'.format(
                 self.config.override_kernel_lengthscale))
 

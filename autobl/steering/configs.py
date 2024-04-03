@@ -97,7 +97,7 @@ class GPExperimentGuideConfig(ExperimentGuideConfig):
     override_kernel_lengthscale: Optional[float] = None
     """
     If given, the lengthscale parameter of the kernel will be overriden with this number, but its prior distribution
-    will not be changed.
+    will not be changed. This value should be given in the original scale of the data, i.e., without any normalization.
     """
 
     def __post_init__(self):
