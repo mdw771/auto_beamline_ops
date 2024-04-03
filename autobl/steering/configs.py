@@ -59,7 +59,21 @@ class GPExperimentGuideConfig(ExperimentGuideConfig):
     """Class handle of the model. Should be a subclass of botorch.Model."""
 
     model_params: dict = dataclasses.field(default_factory=dict)
-    """Parameters of the model class."""
+    """
+    Parameters of the model class. 
+    
+    The covariance kernel and its parameters also go here and should be given through 
+    "covariance_module" as a `gpytorch.kernels.Kernel` object. One may also specify a prior for
+    the lengthscale when instantiating the kernel. The distribution parameters should be in the space normalized
+    between 0 and 1. For example:
+    ```
+    model_params={'covar_module': gpytorch.kernels.MaternKernel(
+        nu=2.5, 
+        lengthscale_prior=gpytorch.priors.NormalPrior(0.08, 0.05))}
+    ```
+    Instead of using a prior, one may also use the `override_kernel_lengthscale` parameter to specify a fixed
+    value for the lengthscale. 
+    """
 
     acquisition_function_class: Type[botorch.acquisition.acquisition.AcquisitionFunction] = (
         botorch.acquisition.UpperConfidenceBound)
@@ -78,6 +92,12 @@ class GPExperimentGuideConfig(ExperimentGuideConfig):
     """
     Parameters of the optimizer constructor, not including `bounds`, `num_candidates` (these arguments are filled
     in in the ExperimentGuide class based on other config settings).
+    """
+
+    override_kernel_lengthscale: Optional[float] = None
+    """
+    If given, the lengthscale parameter of the kernel will be overriden with this number, but its prior distribution
+    will not be changed.
     """
 
     def __post_init__(self):

@@ -29,19 +29,6 @@ class ExperimentGuide:
     def update(self, *args, **kwargs):
         pass
 
-    def get_bounds(self):
-        lb = self.config.lower_bounds
-        if lb is None:
-            lb = torch.tensor([-np.inf] * self.config.dim_measurement_space)
-        ub = self.config.upper_bounds
-        if ub is None:
-            ub = torch.tensor([np.inf] * self.config.dim_measurement_space)
-        if not isinstance(lb, torch.Tensor):
-            lb = torch.from_numpy(lb)
-        if not isinstance(ub, torch.Tensor):
-            ub = torch.from_numpy(ub)
-        return torch.stack([lb, ub])
-
 
 class GPExperimentGuide(ExperimentGuide):
 
@@ -100,17 +87,40 @@ class GPExperimentGuide(ExperimentGuide):
             **self.config.optimizer_params
         )
 
+    def get_bounds(self):
+        lb = self.config.lower_bounds
+        if lb is None:
+            lb = torch.tensor([-np.inf] * self.config.dim_measurement_space)
+        ub = self.config.upper_bounds
+        if ub is None:
+            ub = torch.tensor([np.inf] * self.config.dim_measurement_space)
+        if not isinstance(lb, torch.Tensor):
+            lb = torch.from_numpy(lb)
+        # print(lb.shape)
+        # print(self.input_transform.bounds)
+        lb, _ = self.transform_data(lb)
+        if not isinstance(ub, torch.Tensor):
+            ub = torch.from_numpy(ub)
+        ub, _ = self.transform_data(ub)
+        return torch.stack([lb, ub])
+
     def transform_data(self, x=None, y=None, train=False):
         if x is not None:
             x = x.double()
         if y is not None:
             y = y.double()
         if x is not None and self.input_transform is not None:
+            do_squeeze = False
+            if x.ndim == 1:
+                x = x[:, None]
+                do_squeeze = True
             if train:
                 self.input_transform.train()
             else:
                 self.input_transform.eval()
             x = self.input_transform(x)
+            if do_squeeze:
+                x = x[:, 0]
         if y is not None and self.outcome_transform is not None:
             if train:
                 self.outcome_transform.train()
@@ -134,6 +144,7 @@ class GPExperimentGuide(ExperimentGuide):
 
     def suggest(self):
         candidate, acq_val = self.optimizer.maximize(self.acquisition_function)
+        candidate, _ = self.untransform_data(candidate)
         return candidate
 
     def update(self, x_data, y_data):
@@ -162,8 +173,20 @@ class GPExperimentGuide(ExperimentGuide):
         logging.info('Kernel lengthscale after optimization (normalized & standardized): {}'.format(
             to_numpy(self.model.covar_module.lengthscale))
         )
+        if self.config.override_kernel_lengthscale is not None:
+            self.model.covar_module.lengthscale = self.config.override_kernel_lengthscale
+            logging.info('Kernel lengthscale (normalized & standardized) overriden to: {}'.format(
+                self.config.override_kernel_lengthscale))
 
-    def plot_posterior(self, x):
+    def get_posterior_mean_and_std(self, x):
+        x_transformed, _ = self.transform_data(x, None, train=False)
+        posterior = self.model.posterior(x_transformed)
+        posterior = self.untransform_posterior(posterior)
+        mu = posterior.mean
+        sigma = posterior.variance.clamp_min(1e-12).sqrt()
+        return mu, sigma
+
+    def plot_posterior(self, x, ax=None):
         """
         Plot the posterior mean and standard deviation of the GP model. Only works with 1-dimension feature space.
 
@@ -173,22 +196,30 @@ class GPExperimentGuide(ExperimentGuide):
             x = torch.from_numpy(x)
         if x.ndim == 1:
             x = x[:, None]
+        mu, sigma = self.get_posterior_mean_and_std(x)
+        mu = mu.reshape(-1).cpu().detach().numpy()
+        sigma = sigma.reshape(-1).cpu().detach().numpy()
         x_transformed, _ = self.transform_data(x, None, train=False)
-        posterior = self.model.posterior(x_transformed)
-        posterior = self.untransform_posterior(posterior)
-        mu = posterior.mean.reshape(-1).cpu().detach().numpy()
-        sigma = posterior.variance.clamp_min(1e-12).sqrt().reshape(-1).cpu().detach().numpy()
         acq = self.acquisition_function(x_transformed.view(-1, 1, 1)).reshape(-1).cpu().detach().numpy()
 
         if isinstance(x, torch.Tensor):
             x = x.cpu().detach().numpy()
         x = np.squeeze(x)
-        fig, ax = plt.subplots(1, 2, figsize=(9, 4))
-        ax[0].plot(x, mu)
+        external_ax = True
+        if ax is None:
+            external_ax = False
+            fig, ax = plt.subplots(1, 2, figsize=(9, 4))
+        if not isinstance(ax, (list, tuple, np.ndarray)):
+            ax = [ax]
+        ax[0].plot(x, mu, label='Posterior mean')
         ax[0].fill_between(x, mu - sigma, mu + sigma, alpha=0.5)
         data_x, data_y = self.untransform_data(self.data_x, self.data_y)
-        ax[0].scatter(data_x.reshape(-1), data_y.reshape(-1))
+        ax[0].scatter(data_x.reshape(-1), data_y.reshape(-1), label='Measured data')
         ax[0].set_title('Posterior mean and $+/-\sigma$ interval')
-        ax[1].plot(x, acq)
-        ax[1].set_title('Acquisition function')
-        plt.show()
+        if len(ax) > 1:
+            ax[1].plot(x, acq)
+            ax[1].set_title('Acquisition function')
+        if external_ax:
+            return ax
+        else:
+            plt.show()
