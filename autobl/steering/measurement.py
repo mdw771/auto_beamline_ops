@@ -45,6 +45,7 @@ class SimulatedMeasurement(Measurement):
             return to_tensor(self.f(x))
         elif self.data is not None:
             x = to_numpy(x)
-            return to_tensor(self.interp(x))
+            x = to_tensor(self.interp(x))
+            return x
         else:
             raise ValueError('f or data cannot both be None.')

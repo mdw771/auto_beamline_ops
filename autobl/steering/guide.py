@@ -95,10 +95,10 @@ class GPExperimentGuide(ExperimentGuide):
         if ub is None:
             ub = torch.tensor([np.inf] * self.config.dim_measurement_space)
         if not isinstance(lb, torch.Tensor):
-            lb = torch.from_numpy(lb)
+            lb = torch.tensor(lb)
         lb, _ = self.transform_data(lb)
         if not isinstance(ub, torch.Tensor):
-            ub = torch.from_numpy(ub)
+            ub = torch.tensor(ub)
         ub, _ = self.transform_data(ub)
         return torch.stack([lb, ub])
 
@@ -226,7 +226,7 @@ class GPExperimentGuide(ExperimentGuide):
         :param x: torch.Tensor[float, ...]. The points to plot.
         """
         if not isinstance(x, torch.Tensor):
-            x = torch.from_numpy(x)
+            x = to_tensor(x)
         if x.ndim == 1:
             x = x[:, None]
         mu, sigma = self.get_posterior_mean_and_std(x)
@@ -247,7 +247,7 @@ class GPExperimentGuide(ExperimentGuide):
         ax[0].plot(x, mu, label='Posterior mean')
         ax[0].fill_between(x, mu - sigma, mu + sigma, alpha=0.5)
         data_x, data_y = self.untransform_data(self.data_x, self.data_y)
-        ax[0].scatter(data_x.reshape(-1), data_y.reshape(-1), label='Measured data')
+        ax[0].scatter(to_numpy(data_x.reshape(-1)), to_numpy(data_y.reshape(-1)), label='Measured data')
         ax[0].set_title('Posterior mean and $+/-\sigma$ interval')
         if len(ax) > 1:
             ax[1].plot(x, acq)
