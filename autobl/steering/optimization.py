@@ -68,11 +68,13 @@ class BoTorchOptimizer(Optimizer):
         optimize_acqf: {
             "num_restarts": 5,
             "raw_samples": 10
-        }
+        },
+        optimize_acqf_discrete: {}
     }
 
     required_params = {
-        optimize_acqf: ['bounds', 'q', 'num_restarts']
+        optimize_acqf: ['bounds', 'q', 'num_restarts'],
+        optimize_acqf_discrete: ['q']
     }
 
     def __init__(
@@ -103,14 +105,16 @@ class BoTorchOptimizer(Optimizer):
 
     def get_argument_dict(self):
         arg_dict = {**self.optim_func_params}
-        for arg in self.default_params[self.optim_func].keys():
-            if arg not in arg_dict.keys():
-                arg_dict[arg] = self.default_params[self.optim_func][arg]
+        if self.optim_func in self.default_params.keys():
+            for arg in self.default_params[self.optim_func].keys():
+                if arg not in arg_dict.keys():
+                    arg_dict[arg] = self.default_params[self.optim_func][arg]
 
-        if 'bounds' in self.required_params[self.optim_func] and 'bounds' not in arg_dict.keys():
-            arg_dict['bounds'] = self.bounds
-        if 'q' in self.required_params[self.optim_func] and 'q' not in arg_dict.keys():
-            arg_dict['q'] = self.num_candidates
+        if self.optim_func in self.required_params.keys():
+            if 'bounds' in self.required_params[self.optim_func] and 'bounds' not in arg_dict.keys():
+                arg_dict['bounds'] = self.bounds
+            if 'q' in self.required_params[self.optim_func] and 'q' not in arg_dict.keys():
+                arg_dict['q'] = self.num_candidates
 
         for arg in self.required_params[self.optim_func]:
             if arg not in arg_dict.keys():
@@ -133,9 +137,16 @@ class BoTorchOptimizer(Optimizer):
         :return: Tensor, Tensor[float]. The locations and value of the optima.
         """
         arg_dict = self.get_argument_dict()
-        # Returns optimal points in [num_restarts, q = num_candidates, d] and their
+        # If using optimize_acqf, returns optimal points in [num_restarts, q = num_candidates, d] and their
         # acquisition values in [num_restarts] (there is no q dimension).
+        # If using optimize_discrete, the shape of returned points will be [q, d].
         pts, acq_vals = self.optim_func(acquisition_function, return_best_only=False, **arg_dict)
+        if pts.ndim == 2:
+            pts = pts[None, ...]
+        if acq_vals.ndim == 0:
+            acq_vals = torch.tensor([[acq_vals]])
+        elif acq_vals.ndim == 1:
+            acq_vals = acq_vals[None, ...]
         # nonduplicating_mask.shape = [num_restarts, q].
         nonduplicating_mask = self.find_duplicate_point_mask(pts)
 
