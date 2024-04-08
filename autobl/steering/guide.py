@@ -77,7 +77,9 @@ class GPExperimentGuide(ExperimentGuide):
                                                      'num_candidates must be 1.')
         self.acquisition_function = self.config.acquisition_function_class(
             self.model,
-            **self.config.acquisition_function_params
+            **self.config.acquisition_function_params,
+            posterior_transform=botorch.acquisition.objective.UnstandardizePosteriorTransform(
+                Y_mean=self.outcome_transform.means[0], Y_std=self.outcome_transform.stdvs[0])
         )
 
     def build_optimizer(self):
