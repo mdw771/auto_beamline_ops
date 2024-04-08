@@ -6,7 +6,7 @@ import json
 import botorch
 import gpytorch
 
-from autobl.steering.optimization import Optimizer, BoTorchOptimizer
+from autobl.steering.optimization import Optimizer, ContinuousOptimizer
 
 
 @dataclasses.dataclass
@@ -82,7 +82,7 @@ class GPExperimentGuideConfig(ExperimentGuideConfig):
     acquisition_function_params: dict = dataclasses.field(default_factory=dict)
     """Parameters of the acquisition function."""
 
-    optimizer_class: Type[Optimizer] = BoTorchOptimizer
+    optimizer_class: Type[Optimizer] = ContinuousOptimizer
     """
     The function handle of the optimization function. The function should have the acquisition function,
     q (number of candidates) and other parameters as arguments.
