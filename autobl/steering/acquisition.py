@@ -8,6 +8,66 @@ from botorch.acquisition.objective import PosteriorTransform
 from botorch.utils import t_batch_mode_transform
 from torch import Tensor
 
+from autobl.util import *
+
+
+class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviation):
+    r"""Posterior standard deviation enhanced by fitting residue.
+    The current posterior mean is linearly fit using a series of reference spectra, and
+    the fitting residue is combined with the posterior mean to give the acquisiion function's
+    value.
+    """
+    def __init__(
+            self, model: Model,
+            posterior_transform: Optional[PosteriorTransform] = None,
+            maximize: bool = True,
+            reference_spectra_x: Tensor = None,
+            reference_spectra_y: Tensor = None,
+            phi: float = 0.1
+    ) -> None:
+        """
+        The constructor.
+
+        :param reference_spectra_x: Tensor. A Tensor with shape [m,] containing the coordinates of the
+                                    n refernce spectra.
+        :param reference_spectra_y: Tensor. A Tensor with shape [n, m] containing the values of the
+                                    n refernce spectra.
+        :param phi: Optional[float]. Weight of the residue term.
+        """
+        super().__init__(model, posterior_transform, maximize)
+        self.reference_spectra_x = reference_spectra_x
+        self.reference_spectra_y = reference_spectra_y
+        self.phi = phi
+
+    @t_batch_mode_transform()
+    def forward(self, x: Tensor) -> Tensor:
+        import matplotlib.pyplot as plt
+
+        mu, _ = self._mean_and_sigma(self.reference_spectra_x)
+        amat = self.reference_spectra_y.T
+        bvec = mu.reshape(-1, 1)
+        xvec = torch.matmul(torch.linalg.pinv(amat), bvec)
+        y_fit = torch.matmul(amat, xvec).view(-1)
+        res = (y_fit - mu) ** 2
+
+        # plt.plot(self.reference_spectra_y[0].squeeze().cpu(), linestyle='--')
+        # plt.plot(self.reference_spectra_y[1].squeeze().cpu(), linestyle='--')
+        # plt.show()
+
+        _, sigma = self._mean_and_sigma(x)
+        r = interp1d_tensor(self.reference_spectra_x.squeeze(),
+                            res,
+                            x.squeeze())
+        a = sigma + self.phi * r
+        # if len(x) > 100:
+        #     plt.plot(y_fit.squeeze().detach().cpu())
+        #     plt.plot(mu.squeeze().detach().cpu())
+        #     plt.plot(sigma.squeeze().detach().cpu())
+        #     plt.plot(r.squeeze().detach().cpu() * self.phi)
+        #     plt.plot(a.squeeze().detach().cpu())
+        #     plt.show()
+        return a
+
 
 class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
     r"""Gradient-aware posterior standard deviation.
