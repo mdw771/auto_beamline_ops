@@ -55,3 +55,26 @@ def interp1d_tensor(x0, y0, x):
     w = ((x - x_floor) / (x_ceil - x_floor + 1e-8)).clamp(0, 1)
     vals = y_ceil * w + y_floor * (1 - w)
     return vals
+
+
+def elementwise_derivative(f, x, order=1):
+    """
+    Elementwise 1st or 2nd order derivative.
+
+    :param f: Callable.
+    :param x: Tensor.
+    :param order: int. Can be 1 or 2.
+    :return: Tensor if order == 1; (Tensor, Tensor) if order == 2, where the returned tensors are respectively
+             the first order and second order derivatives.
+    """
+    def differentiate(x):
+        jac = torch.autograd.functional.jacobian(f, x, create_graph=True)
+        g = jac[torch.tensor(range(jac.shape[0])), torch.tensor(range(jac.shape[0]))]
+        return g
+    g = differentiate(x)
+    if order == 1:
+        return g
+    if order == 2:
+        jac2 = torch.autograd.functional.jacobian(differentiate, x, create_graph=True)
+        gg = jac2[torch.tensor(range(jac2.shape[0])), torch.tensor(range(jac2.shape[0]))]
+        return g, gg

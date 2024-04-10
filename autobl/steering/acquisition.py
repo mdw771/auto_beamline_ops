@@ -23,7 +23,8 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviation):
             maximize: bool = True,
             reference_spectra_x: Tensor = None,
             reference_spectra_y: Tensor = None,
-            phi: float = 0.1
+            phi: float = 0.1,
+            add_posterior_stddev: bool = True
     ) -> None:
         """
         The constructor.
@@ -33,16 +34,18 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviation):
         :param reference_spectra_y: Tensor. A Tensor with shape [n, m] containing the values of the
                                     n refernce spectra.
         :param phi: Optional[float]. Weight of the residue term.
+        :param add_posterior_stddev: bool. If False, the posterior standard deviation will not be added
+                                     to the returned value, and the acquisition function will be solely
+                                     contributed by fitting residue.
         """
         super().__init__(model, posterior_transform, maximize)
         self.reference_spectra_x = reference_spectra_x
         self.reference_spectra_y = reference_spectra_y
         self.phi = phi
+        self.add_posterior_stddev = add_posterior_stddev
 
     @t_batch_mode_transform()
-    def forward(self, x: Tensor) -> Tensor:
-        import matplotlib.pyplot as plt
-
+    def forward(self, x: Tensor, sigma_x=None, **kwargs) -> Tensor:
         mu, _ = self._mean_and_sigma(self.reference_spectra_x)
         amat = self.reference_spectra_y.T
         bvec = mu.reshape(-1, 1)
@@ -50,22 +53,17 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviation):
         y_fit = torch.matmul(amat, xvec).view(-1)
         res = (y_fit - mu) ** 2
 
-        # plt.plot(self.reference_spectra_y[0].squeeze().cpu(), linestyle='--')
-        # plt.plot(self.reference_spectra_y[1].squeeze().cpu(), linestyle='--')
-        # plt.show()
-
-        _, sigma = self._mean_and_sigma(x)
+        if self.add_posterior_stddev:
+            if sigma_x is None:
+                _, sigma = self._mean_and_sigma(x)
+            else:
+                sigma = sigma_x
+        else:
+            sigma = 0
         r = interp1d_tensor(self.reference_spectra_x.squeeze(),
                             res,
                             x.squeeze())
         a = sigma + self.phi * r
-        # if len(x) > 100:
-        #     plt.plot(y_fit.squeeze().detach().cpu())
-        #     plt.plot(mu.squeeze().detach().cpu())
-        #     plt.plot(sigma.squeeze().detach().cpu())
-        #     plt.plot(r.squeeze().detach().cpu() * self.phi)
-        #     plt.plot(a.squeeze().detach().cpu())
-        #     plt.show()
         return a
 
 
@@ -80,17 +78,24 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
             posterior_transform: Optional[PosteriorTransform] = None,
             maximize: bool = True,
             gradient_dims: Optional[list[int, ...]] = None,
-            phi: float = 0.1
+            phi: float = 0.1,
+            add_posterior_stddev: bool = True
     ) -> None:
         super().__init__(model, posterior_transform, maximize)
         self.gradient_dims = gradient_dims
         self.phi = phi
+        self.add_posterior_stddev = add_posterior_stddev
 
     @t_batch_mode_transform()
-    def forward(self, x: Tensor) -> Tensor:
-        mu, sigma = self._mean_and_sigma(x)
+    def forward(self, x: Tensor, mu_x=None, sigma_x=None) -> Tensor:
+        if mu_x is None or sigma_x is None:
+            mu, sigma = self._mean_and_sigma(x)
+        else:
+            mu, sigma = mu_x, sigma_x
         g = self.calculate_gradients(x)
         g = torch.linalg.norm(g, dim=-1)
+        if not self.add_posterior_stddev:
+            sigma = 0
         a = sigma + self.phi * g
         return a
 
@@ -102,3 +107,55 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
         if self.gradient_dims is not None:
             g = torch.index_select(g, -1, self.gradient_dims)
         return g.squeeze(1)
+
+
+class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
+    r"""Acquisition function that combines gradient and reference spectrum augmentations."""
+    def __init__(
+            self,
+            model: Model,
+            posterior_transform: Optional[PosteriorTransform] = None,
+            maximize: bool = True,
+            gradient_dims: Optional[list[int, ...]] = None,
+            reference_spectra_x: Tensor = None,
+            reference_spectra_y: Tensor = None,
+            phi_g: float = 0.1,
+            phi_r: float = 100,
+            add_posterior_stddev: bool = True
+    ) -> None:
+        super().__init__(model, posterior_transform, maximize)
+        self.acqf_g = GradientAwarePosteriorStandardDeviation(
+            model,
+            posterior_transform=posterior_transform,
+            maximize=maximize,
+            gradient_dims=gradient_dims,
+            phi=phi_g,
+            add_posterior_stddev=False
+        )
+        self.acqf_r = FittingResiduePosteriorStandardDeviation(
+            model,
+            posterior_transform=posterior_transform,
+            maximize=maximize,
+            reference_spectra_x=reference_spectra_x,
+            reference_spectra_y=reference_spectra_y,
+            phi=phi_r,
+            add_posterior_stddev=False
+        )
+        self.phi_r = phi_r
+        self.phi_g = phi_g
+        self.reference_spectra_x = reference_spectra_x
+        self.reference_spectra_y = reference_spectra_y
+        self.add_posterior_stddev = add_posterior_stddev
+
+    @t_batch_mode_transform()
+    def forward(self, x: Tensor) -> Tensor:
+        mu, sigma = self._mean_and_sigma(x)
+        if self.add_posterior_stddev:
+            a = sigma
+        else:
+            a = 0
+        if self.phi_g > 0:
+            a = a + self.acqf_g(x, mu_x=mu, sigma_x=sigma)
+        if self.phi_r > 0 and self.reference_spectra_x is not None and self.reference_spectra_y is not None:
+            a = a + self.acqf_r(x, mu_x=mu, sigma_x=sigma)
+        return a
