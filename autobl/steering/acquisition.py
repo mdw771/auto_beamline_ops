@@ -91,7 +91,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
         :param gradient_dims: Optional[list[int, ...]]. The dimensions along which the magnitude of gradient should
                               be computed. If None, it will be assumed to be the last dimension.
         :param phi: float. The weight of the gradient term.
-        :param phi2: float. The weight of the second-order derivative term. Disregarded if `order == 1`.
+        :param phi2: float. The weight of the second or higher-order derivative term. Disregarded if `order == 1`.
         :param method: str. Can be "analytical" or "numerical". If "analytical", gradients are calculated using
                        automatic differentiation. Due to the limitation of BoTorch, only first-order derivative is
                        available using this method. If "numerical", gradients are calculated using finite difference
@@ -121,20 +121,23 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
             mu, sigma = self._mean_and_sigma(x)
         else:
             mu, sigma = mu_x, sigma_x
-        gg = 0.0
+        gradients_all_orders = [0.0] * self.order
         if self.method == 'analytical':
             g = self.calculate_gradients_analytical(x)
+            gradients_all_orders[0] = torch.linalg.norm(g, dim=-1)
         elif self.method == 'numerical':
-            g = self.calculate_gradients_numerical(x, order=1)
-            if self.order > 1:
-                gg = self.calculate_gradients_numerical(x, order=2)
-                gg = torch.linalg.norm(gg, dim=-1)
+            for ord in range(1, self.order + 1):
+                g = self.calculate_gradients_numerical(x, order=ord)
+                g = torch.linalg.norm(g, dim=-1)
+                gradients_all_orders[ord - 1] = g
         else:
             raise ValueError
-        g = torch.linalg.norm(g, dim=-1)
         if not self.add_posterior_stddev:
             sigma = 0
-        a = sigma + self.phi * g + self.phi2 * gg
+        a = sigma + self.phi * gradients_all_orders[0]
+        if len(gradients_all_orders) > 1:
+            for gg in gradients_all_orders[1:]:
+                a = a + self.phi2 * gg
         return a
 
     def calculate_gradients_analytical(self, x: Tensor):
@@ -153,37 +156,24 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
         return g.squeeze(1)
 
     def calculate_gradients_numerical(self, x: Tensor, order: int = 1):
+        def differentiate(x, h, f, order=1):
+            if order == 1:
+                return (f(x + h) - f(x - h)) / (2 * h)
+            else:
+                d = (differentiate(x + h, h, f, order=order - 1) - differentiate(x - h, h, f, order=order - 1))
+                d = d / (2 * h)
+                return d
         f = lambda x: self.model.posterior(x).mean
         g = []
         gradient_dims = self.gradient_dims
         if gradient_dims is None:
             gradient_dims = list(range(x.shape[-1]))
-        if order == 1:
-            for grad_dim in gradient_dims:
-                h = torch.zeros(x.shape[-1])
-                h[grad_dim] = self.finite_difference_interval
-                # x_minus = torch.clip(x - h, 0, 1)
-                # x_plus = torch.clip(x + h, 0, 1)
-                x_minus = x - h
-                x_plus = x + h
-                gi = (f(x_plus) - f(x_minus)) / (x_plus - x_minus)
-                g.append(gi)
-            g = torch.cat(g, dim=-1)
-        elif order == 2:
-            for grad_dim in gradient_dims:
-                h = torch.zeros(x.shape[-1])
-                h[grad_dim] = self.finite_difference_interval
-                x_minus = x - h
-                x_minus2 = x_minus - h
-                x_plus = x + h
-                x_plus2 = x_plus + h
-                gi_minus = (f(x) - f(x_minus2)) / (x - x_minus2)
-                gi_plus = (f(x_plus2) - f(x)) / (x_plus2 - x)
-                gi = (gi_plus - gi_minus) / (x_plus - x_minus)
-                g.append(gi)
-            g = torch.cat(g, dim=-1)
-        else:
-            raise ValueError('Unsupported order of {}.'.format(order))
+        for grad_dim in gradient_dims:
+            h = torch.zeros(x.shape[-1])
+            h[grad_dim] = self.finite_difference_interval
+            gi = differentiate(x, h, f, order=order)
+            g.append(gi)
+        g = torch.cat(g, dim=-1)
         return g.squeeze(1)
 
 class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
