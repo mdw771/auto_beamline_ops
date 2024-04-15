@@ -79,12 +79,41 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
             maximize: bool = True,
             gradient_dims: Optional[list[int, ...]] = None,
             phi: float = 0.1,
+            phi2: float = 0.001,
+            method: str = 'analytical',
+            order: int = 1,
+            finite_difference_interval: float = 1e-2,
             add_posterior_stddev: bool = True
     ) -> None:
+        """
+        The constructor.
+
+        :param gradient_dims: Optional[list[int, ...]]. The dimensions along which the magnitude of gradient should
+                              be computed. If None, it will be assumed to be the last dimension.
+        :param phi: float. The weight of the gradient term.
+        :param phi2: float. The weight of the second-order derivative term. Disregarded if `order == 1`.
+        :param method: str. Can be "analytical" or "numerical". If "analytical", gradients are calculated using
+                       automatic differentiation. Due to the limitation of BoTorch, only first-order derivative is
+                       available using this method. If "numerical", gradients are calculated using finite difference
+                       based on the evaluations of the posterior mean on `numerical_gradient_points` points.
+        :param order: int. The order of the derivative. If `method` is `"analytical"`, it can only be 1.
+        :param finite_difference_interval: float. The interval used for finite-difference differentiation. Only used
+                                           when `method` is `"numerical"`.  This value is specified in the normalized
+                                           scale (between 0 and 1).
+        :param add_posterior_stddev: bool. If True, posterior standard deviation is added to the function value.
+        """
         super().__init__(model, posterior_transform, maximize)
         self.gradient_dims = gradient_dims
         self.phi = phi
+        self.phi2 = phi2
+        self.method = method
+        self.order = order
+        self.finite_difference_interval = finite_difference_interval
         self.add_posterior_stddev = add_posterior_stddev
+        if method == 'analytical' and order > 1:
+            raise ValueError("When method is 'analytical', order can only be 1.")
+        if method not in ['analytical', 'numerical']:
+            raise ValueError("'method' can only be 'analytical' or 'numerical'.")
 
     @t_batch_mode_transform()
     def forward(self, x: Tensor, mu_x=None, sigma_x=None) -> Tensor:
@@ -92,14 +121,29 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
             mu, sigma = self._mean_and_sigma(x)
         else:
             mu, sigma = mu_x, sigma_x
-        g = self.calculate_gradients(x)
+        gg = 0.0
+        if self.method == 'analytical':
+            g = self.calculate_gradients_analytical(x)
+        elif self.method == 'numerical':
+            g = self.calculate_gradients_numerical(x, order=1)
+            if self.order > 1:
+                gg = self.calculate_gradients_numerical(x, order=2)
+                gg = torch.linalg.norm(gg, dim=-1)
+        else:
+            raise ValueError
         g = torch.linalg.norm(g, dim=-1)
         if not self.add_posterior_stddev:
             sigma = 0
-        a = sigma + self.phi * g
+        a = sigma + self.phi * g + self.phi2 * gg
         return a
 
-    def calculate_gradients(self, x: Tensor):
+    def calculate_gradients_analytical(self, x: Tensor):
+        """
+        Calculate gradients using AD.
+
+        :param x: Tensor.
+        :return: Tensor. Gradient of shape (n, d).
+        """
         f_posterior_mean = lambda x: self.model.posterior(x).mean.squeeze()
         with torch.enable_grad():
             jac = torch.autograd.functional.jacobian(f_posterior_mean, x)
@@ -108,6 +152,39 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
             g = torch.index_select(g, -1, self.gradient_dims)
         return g.squeeze(1)
 
+    def calculate_gradients_numerical(self, x: Tensor, order: int = 1):
+        f = lambda x: self.model.posterior(x).mean
+        g = []
+        gradient_dims = self.gradient_dims
+        if gradient_dims is None:
+            gradient_dims = list(range(x.shape[-1]))
+        if order == 1:
+            for grad_dim in gradient_dims:
+                h = torch.zeros(x.shape[-1])
+                h[grad_dim] = self.finite_difference_interval
+                # x_minus = torch.clip(x - h, 0, 1)
+                # x_plus = torch.clip(x + h, 0, 1)
+                x_minus = x - h
+                x_plus = x + h
+                gi = (f(x_plus) - f(x_minus)) / (x_plus - x_minus)
+                g.append(gi)
+            g = torch.cat(g, dim=-1)
+        elif order == 2:
+            for grad_dim in gradient_dims:
+                h = torch.zeros(x.shape[-1])
+                h[grad_dim] = self.finite_difference_interval
+                x_minus = x - h
+                x_minus2 = x_minus - h
+                x_plus = x + h
+                x_plus2 = x_plus + h
+                gi_minus = (f(x) - f(x_minus2)) / (x - x_minus2)
+                gi_plus = (f(x_plus2) - f(x)) / (x_plus2 - x)
+                gi = (gi_plus - gi_minus) / (x_plus - x_minus)
+                g.append(gi)
+            g = torch.cat(g, dim=-1)
+        else:
+            raise ValueError('Unsupported order of {}.'.format(order))
+        return g.squeeze(1)
 
 class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
     r"""Acquisition function that combines gradient and reference spectrum augmentations."""
@@ -117,9 +194,12 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
             posterior_transform: Optional[PosteriorTransform] = None,
             maximize: bool = True,
             gradient_dims: Optional[list[int, ...]] = None,
+            gradient_order: int = 1,
+            differentiation_method: str = 'analytical',
             reference_spectra_x: Tensor = None,
             reference_spectra_y: Tensor = None,
             phi_g: float = 0.1,
+            phi_g2: float = 0.001,
             phi_r: float = 100,
             add_posterior_stddev: bool = True
     ) -> None:
@@ -129,7 +209,10 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
             posterior_transform=posterior_transform,
             maximize=maximize,
             gradient_dims=gradient_dims,
+            method=differentiation_method,
+            order=gradient_order,
             phi=phi_g,
+            phi2=phi_g2,
             add_posterior_stddev=False
         )
         self.acqf_r = FittingResiduePosteriorStandardDeviation(
@@ -141,8 +224,10 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
             phi=phi_r,
             add_posterior_stddev=False
         )
+        self.gradient_order = gradient_order
         self.phi_r = phi_r
         self.phi_g = phi_g
+        self.phi_g2 = phi_g2
         self.reference_spectra_x = reference_spectra_x
         self.reference_spectra_y = reference_spectra_y
         self.add_posterior_stddev = add_posterior_stddev
