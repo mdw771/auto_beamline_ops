@@ -297,11 +297,11 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
         if self.phi_g > 0:
             a_g = self.acqf_g(x, mu_x=mu, sigma_x=sigma)
         else:
-            a_g = 0.0
+            a_g = torch.tensor(0.0, device=x.device)
         if self.phi_r > 0:
             a_r = self.acqf_r(x, mu_x=mu, sigma_x=sigma)
         else:
-            a_r = 0.0
+            a_r = torch.tensor(0.0, device=x.device)
         a = a * torch.clip(a_g + a_r, self.addon_term_lower_bound, None)
         a = self.apply_mask_func(x, a)
         if self.debug:
@@ -315,18 +315,21 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
         a_r = func_locals['a_r']
         a = func_locals['a']
         x = func_locals['x']
+        x_squeezed = to_numpy(x.squeeze())
         if len(x) > 100:
             fig, ax = plt.subplots(5, 1)
-            ax[0].plot(to_numpy(mu.squeeze()))
+            ax[0].plot(x_squeezed, to_numpy(mu.squeeze()))
             ax[0].fill_between(
-                np.arange(len(mu)), to_numpy((mu - sigma).squeeze()), to_numpy((mu + sigma).squeeze()), alpha=0.5)
-            ax[1].plot(to_numpy(sigma.squeeze()))
-            ax[2].plot(to_numpy(a_g.squeeze()))
-            ax[2].plot(to_numpy(a_r.squeeze()))
-            ax[3].plot(to_numpy((a_g + a_r).squeeze()))
-            ax[4].plot(to_numpy(a.squeeze()))
+                x_squeezed, to_numpy((mu - sigma).squeeze()), to_numpy((mu + sigma).squeeze()), alpha=0.5)
+            ax[1].plot(x_squeezed, to_numpy(sigma.squeeze()))
+            if self.phi_g > 0:
+                ax[2].plot(x_squeezed, to_numpy(a_g.squeeze()))
+            if self.phi_r > 0:
+                ax[2].plot(x_squeezed, to_numpy(a_r.squeeze()))
+            if self.phi_g > 0 or self.phi_r:
+                ax[3].plot(x_squeezed, to_numpy((a_g + a_r).squeeze()))
+            ax[4].plot(x_squeezed, to_numpy(a.squeeze()))
             if self.mask_func is not None:
                 fig, ax = plt.subplots(1, 1)
-                x_squeezed = to_numpy(x.squeeze())
-                ax.plot(to_numpy(self.mask_func(x.squeeze())))
+                ax.plot(x_squeezed, to_numpy(self.mask_func(x.squeeze())))
             plt.show()

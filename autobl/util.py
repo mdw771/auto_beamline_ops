@@ -83,6 +83,9 @@ def elementwise_derivative(f, x, order=1):
 def sigmoid(x, r=1.0, d=0.0):
     return 1.0 / (1.0 + torch.exp(-r * (x - d)))
 
+def gaussian(x, a, mu, sigma, c):
+    return a * torch.exp(-(x - mu) ** 2 / (2 * sigma ** 2)) + c
+
 
 def fit(f, data_x, data_y, init_params, n_iters=20, opt_class=torch.optim.Adam, opt_params=None):
     if opt_params is None:

@@ -100,6 +100,9 @@ class GPExperimentGuideConfig(ExperimentGuideConfig):
     will not be changed. This value should be given in the original scale of the data, i.e., without any normalization.
     """
 
+    noise_variance: Optional[float] = None
+    """Noise variance of the observations."""
+
     def __post_init__(self):
         super().__post_init__()
         if 'input_transform' in self.model_params.keys():
@@ -121,3 +124,12 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
 
     acqf_mask_floor_value: float = 0.1
     """Floor value of the sigmoid function used as acquisition function mask."""
+
+    acqf_mask_post_edge_gain: float = 5.0
+    """Post edge gain in acquisition mask function."""
+
+    acqf_mask_post_edge_offset: float = 1.0
+    """Location of post edge gain in acquisition mask function as a multiple of edge width."""
+
+    acqf_mask_post_edge_width: float = 0.5
+    """Width of post edge gain in acquisition mask function as a multiple of edge width."""

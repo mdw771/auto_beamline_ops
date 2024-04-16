@@ -125,7 +125,7 @@ def test_xanes_gp_fitres_2nd_order_deriv(generate_gold=False, debug=False):
     ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
     ref_spectra_x = torch.linspace(0, 1, ref_spectra_y.shape[-1])
 
-    config = GPExperimentGuideConfig(
+    config = XANESExperimentGuideConfig(
         dim_measurement_space=1,
         num_candidates=1,
         model_class=botorch.models.SingleTaskGP,

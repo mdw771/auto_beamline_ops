@@ -198,7 +198,10 @@ class GPExperimentGuide(ExperimentGuide):
         """
         x_data, y_data = self.transform_data(x_data, y_data, train=False)
         self.record_data(x_data, y_data)
-        self.model = self.model.condition_on_observations(x_data, y_data)
+        additional_params = {}
+        if self.config.noise_variance is not None:
+            additional_params['noise'] = torch.full_like(y_data, self.config.noise_variance)
+        self.model = self.model.condition_on_observations(x_data, y_data, **additional_params)
         # condition_on_observations does not make in-place changes to the model object but creates a new object, so
         # we need to reset the model object in the acquisition function.
         self.build_acquisition_function()
@@ -206,7 +209,12 @@ class GPExperimentGuide(ExperimentGuide):
 
     def train_model(self, x_data, y_data):
         # Create model and compute covariance matrix.
-        self.model = self.config.model_class(x_data, y_data, **self.config.model_params)
+        assert not ('train_Yvar' in self.config.model_params.keys() and self.config.noise_variance is not None)
+        additional_params = {}
+        if self.config.noise_variance is not None:
+            additional_params['train_Yvar'] = torch.full_like(y_data, self.config.noise_variance)
+        self.model = self.config.model_class(x_data, y_data, **self.config.model_params, **additional_params)
+
         # Fit hyperparameters.
         logging.info('Kernel lengthscale before optimization (normalized & standardized): {}'.format(
             to_numpy(self.model.covar_module.lengthscale))
@@ -216,11 +224,14 @@ class GPExperimentGuide(ExperimentGuide):
         logging.info('Kernel lengthscale after optimization (normalized & standardized): {}'.format(
             to_numpy(self.model.covar_module.lengthscale))
         )
+
+        # Override kernel lengthscale if applicable.
         if self.config.override_kernel_lengthscale is not None:
             self.model.covar_module.lengthscale = self.scale_by_normalizer_bounds(
                 self.config.override_kernel_lengthscale)
-            logging.info('Kernel lengthscale (normalized & standardized) overriden to: {}'.format(
-                self.config.override_kernel_lengthscale))
+            logging.info('Kernel lengthscale overriden to: {} ({} after normalization)'.format(
+                self.config.override_kernel_lengthscale,
+                self.scale_by_normalizer_bounds(self.config.override_kernel_lengthscale)))
 
     def get_posterior_mean_and_std(self, x, transform=True, untransform=True):
         if transform:
@@ -288,7 +299,8 @@ class XANESExperimentGuide(GPExperimentGuide):
 
     def build_acquisition_function(self):
         super().build_acquisition_function()
-        self.acquisition_function.set_mask_func(self.acqf_mask_func)
+        if hasattr(self.acquisition_function, 'set_mask_func'):
+            self.acquisition_function.set_mask_func(self.acqf_mask_func)
 
     def build_acqf_mask_function(self, floor_value=0.1):
         """
@@ -315,7 +327,12 @@ class XANESExperimentGuide(GPExperimentGuide):
         peak_width_normalized = peak_properties['widths'][0] / len(x)
 
         def mask_func(x):
-            m = sigmoid(x, r=20. / peak_width_normalized, d=peak_loc_normalized - 1.5 * peak_width_normalized)
+            m = sigmoid(x, r=20. / peak_width_normalized, d=peak_loc_normalized - 1.7 * peak_width_normalized)
+            m = m + gaussian(x,
+                             a=self.config.acqf_mask_post_edge_gain,
+                             mu=peak_loc_normalized + self.config.acqf_mask_post_edge_offset * peak_width_normalized,
+                             sigma=peak_width_normalized * self.config.acqf_mask_post_edge_width,
+                             c=0.0)
             m = m * (1 - floor_value) + floor_value
             return m
 
