@@ -32,7 +32,8 @@ class SimulatedMeasurement(Measurement):
             else:
                 x_data = np.arange(len(data))
                 y_data = to_numpy(self.data)
-            self.interp = lambda pts: scipy.interpolate.interpn(x_data, y_data, pts)
+            self.interp = lambda pts: scipy.interpolate.interpn(x_data, y_data, pts, bounds_error=False,
+                                                                fill_value=None)
 
     def measure(self, x, *args, **kwargs):
         """
