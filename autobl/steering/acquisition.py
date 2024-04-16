@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Callable
 
 import botorch
 import matplotlib.pyplot as plt
@@ -12,7 +12,31 @@ from torch import Tensor
 from autobl.util import *
 
 
-class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviation):
+class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
+    def __init__(
+            self, model: Model,
+            posterior_transform: Optional[PosteriorTransform] = None,
+            maximize: bool = True,
+            add_posterior_stddev: bool = True,
+            debug=False
+    ) -> None:
+        """
+        The constructor.
+
+        :param add_posterior_stddev: bool. If False, the posterior standard deviation will not be added
+                                     to the returned value, and the acquisition function will be solely
+                                     contributed by fitting residue.
+        """
+        super().__init__(model, posterior_transform, maximize)
+        self.add_posterior_stddev = add_posterior_stddev
+        self.debug = debug
+        self.mask_func = None
+
+    def set_mask_func(self, f: Callable):
+        self.mask_func = f
+
+
+class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerivedAcquisition):
     r"""Posterior standard deviation enhanced by fitting residue.
     The current posterior mean is linearly fit using a series of reference spectra, and
     the fitting residue is combined with the posterior mean to give the acquisiion function's
@@ -26,7 +50,7 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviation):
             reference_spectra_y: Tensor = None,
             phi: float = 0.1,
             add_posterior_stddev: bool = True,
-            debug=False
+            debug: bool = False
     ) -> None:
         """
         The constructor.
@@ -40,12 +64,10 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviation):
             to the returned value, and the acquisition function will be solely
             contributed by fitting residue.
         """
-        super().__init__(model, posterior_transform, maximize)
+        super().__init__(model, posterior_transform, maximize, add_posterior_stddev, debug)
         self.reference_spectra_x = reference_spectra_x
         self.reference_spectra_y = reference_spectra_y
         self.phi = phi
-        self.add_posterior_stddev = add_posterior_stddev
-        self.debug = debug
 
     @t_batch_mode_transform()
     def forward(self, x: Tensor, sigma_x=None, **kwargs) -> Tensor:
@@ -84,7 +106,7 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviation):
         plt.show()
 
 
-class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
+class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedAcquisition):
     r"""Gradient-aware posterior standard deviation.
     The acquisition function is given as sigma + phi * grad, where grad
     is the norm of the gradient of the posterior mean along given axes, and
@@ -100,7 +122,8 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
             method: str = 'analytical',
             order: int = 1,
             finite_difference_interval: float = 1e-2,
-            add_posterior_stddev: bool = True
+            add_posterior_stddev: bool = True,
+            debug: bool = False
     ) -> None:
         """
         The constructor.
@@ -119,7 +142,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
             scale (between 0 and 1).
         :param add_posterior_stddev: bool. If True, posterior standard deviation is added to the function value.
         """
-        super().__init__(model, posterior_transform, maximize)
+        super().__init__(model, posterior_transform, maximize, add_posterior_stddev, debug)
         self.gradient_dims = gradient_dims
         self.phi = phi
         self.phi2 = phi2
@@ -194,7 +217,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
         return g.squeeze(1)
 
 
-class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
+class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerivedAcquisition):
     r"""Acquisition function that combines gradient and reference spectrum augmentations."""
     def __init__(
             self,
@@ -225,7 +248,7 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
             acquisition function will behave like a simple posterior standard deviation, while a too small value
             prevents the algorithm from exploring regions with high uncertainty yet low add-on term values.
         """
-        super().__init__(model, posterior_transform, maximize)
+        super().__init__(model, posterior_transform, maximize, add_posterior_stddev, debug)
         self.acqf_g = GradientAwarePosteriorStandardDeviation(
             model,
             posterior_transform=posterior_transform,
@@ -235,7 +258,8 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
             order=gradient_order,
             phi=phi_g,
             phi2=phi_g2,
-            add_posterior_stddev=False
+            add_posterior_stddev=False,
+            debug=debug
         )
         self.acqf_r = FittingResiduePosteriorStandardDeviation(
             model,
@@ -244,7 +268,8 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
             reference_spectra_x=reference_spectra_x,
             reference_spectra_y=reference_spectra_y,
             phi=phi_r,
-            add_posterior_stddev=False
+            add_posterior_stddev=False,
+            debug=debug
         )
         self.gradient_order = gradient_order
         self.phi_r = phi_r
