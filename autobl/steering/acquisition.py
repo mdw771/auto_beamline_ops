@@ -1,6 +1,7 @@
 from typing import Optional
 
 import botorch
+import matplotlib.pyplot as plt
 import torch
 from botorch.models.model import Model
 from botorch.acquisition import *
@@ -24,25 +25,27 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviation):
             reference_spectra_x: Tensor = None,
             reference_spectra_y: Tensor = None,
             phi: float = 0.1,
-            add_posterior_stddev: bool = True
+            add_posterior_stddev: bool = True,
+            debug=False
     ) -> None:
         """
         The constructor.
 
         :param reference_spectra_x: Tensor. A Tensor with shape [m,] containing the coordinates of the
-                                    n refernce spectra.
+            n refernce spectra.
         :param reference_spectra_y: Tensor. A Tensor with shape [n, m] containing the values of the
-                                    n refernce spectra.
+            n refernce spectra.
         :param phi: Optional[float]. Weight of the residue term.
         :param add_posterior_stddev: bool. If False, the posterior standard deviation will not be added
-                                     to the returned value, and the acquisition function will be solely
-                                     contributed by fitting residue.
+            to the returned value, and the acquisition function will be solely
+            contributed by fitting residue.
         """
         super().__init__(model, posterior_transform, maximize)
         self.reference_spectra_x = reference_spectra_x
         self.reference_spectra_y = reference_spectra_y
         self.phi = phi
         self.add_posterior_stddev = add_posterior_stddev
+        self.debug = debug
 
     @t_batch_mode_transform()
     def forward(self, x: Tensor, sigma_x=None, **kwargs) -> Tensor:
@@ -64,7 +67,21 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviation):
                             res,
                             x.squeeze())
         a = sigma + self.phi * r
+
+        if self.debug:
+            self._plot_acquisition_values(locals())
         return a
+
+    def _plot_acquisition_values(self, func_locals):
+        mu = func_locals['mu']
+        y_fit = func_locals['y_fit']
+        res = func_locals['res']
+        fig, ax = plt.subplots(1, 1)
+        ax.plot(to_numpy(self.reference_spectra_x.squeeze()), to_numpy(mu.squeeze()))
+        ax.plot(to_numpy(self.reference_spectra_x.squeeze()), to_numpy(y_fit.squeeze()))
+        ax2 = ax.twinx()
+        ax2.plot(to_numpy(self.reference_spectra_x.squeeze()), to_numpy(res.squeeze()), color='red')
+        plt.show()
 
 
 class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
@@ -89,17 +106,17 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
         The constructor.
 
         :param gradient_dims: Optional[list[int, ...]]. The dimensions along which the magnitude of gradient should
-                              be computed. If None, it will be assumed to be the last dimension.
+            be computed. If None, it will be assumed to be the last dimension.
         :param phi: float. The weight of the gradient term.
         :param phi2: float. The weight of the second or higher-order derivative term. Disregarded if `order == 1`.
         :param method: str. Can be "analytical" or "numerical". If "analytical", gradients are calculated using
-                       automatic differentiation. Due to the limitation of BoTorch, only first-order derivative is
-                       available using this method. If "numerical", gradients are calculated using finite difference
-                       based on the evaluations of the posterior mean on `numerical_gradient_points` points.
+            automatic differentiation. Due to the limitation of BoTorch, only first-order derivative is
+            available using this method. If "numerical", gradients are calculated using finite difference
+            based on the evaluations of the posterior mean on `numerical_gradient_points` points.
         :param order: int. The order of the derivative. If `method` is `"analytical"`, it can only be 1.
         :param finite_difference_interval: float. The interval used for finite-difference differentiation. Only used
-                                           when `method` is `"numerical"`.  This value is specified in the normalized
-                                           scale (between 0 and 1).
+            when `method` is `"numerical"`.  This value is specified in the normalized
+            scale (between 0 and 1).
         :param add_posterior_stddev: bool. If True, posterior standard deviation is added to the function value.
         """
         super().__init__(model, posterior_transform, maximize)
@@ -176,6 +193,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviation):
         g = torch.cat(g, dim=-1)
         return g.squeeze(1)
 
+
 class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
     r"""Acquisition function that combines gradient and reference spectrum augmentations."""
     def __init__(
@@ -191,8 +209,22 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
             phi_g: float = 0.1,
             phi_g2: float = 0.001,
             phi_r: float = 100,
-            add_posterior_stddev: bool = True
+            addon_term_lower_bound: float = 1e-2,
+            add_posterior_stddev: bool = True,
+            debug: bool = False
     ) -> None:
+        """
+        The constructor.
+
+        :param phi_g: float.
+        :param phi_g2: float.
+        :param phi_r: float.
+        :param addon_term_lower_bound: float. The lower bound of add-on terms like gradient and fitting residue. The
+            weighted sum of these terms is clipped to this value before multiplied with the posterior standard
+            deviation. Choose this value carefully: a too large value turns the add-on terms to a constant and the
+            acquisition function will behave like a simple posterior standard deviation, while a too small value
+            prevents the algorithm from exploring regions with high uncertainty yet low add-on term values.
+        """
         super().__init__(model, posterior_transform, maximize)
         self.acqf_g = GradientAwarePosteriorStandardDeviation(
             model,
@@ -221,16 +253,44 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviation):
         self.reference_spectra_x = reference_spectra_x
         self.reference_spectra_y = reference_spectra_y
         self.add_posterior_stddev = add_posterior_stddev
+        self.addon_term_lower_bound = addon_term_lower_bound
+        self.debug = debug
 
     @t_batch_mode_transform()
     def forward(self, x: Tensor) -> Tensor:
         mu, sigma = self._mean_and_sigma(x)
         if self.add_posterior_stddev:
-            a = sigma
+            a = sigma - sigma.min()
         else:
-            a = 0
+            a = 1.0
         if self.phi_g > 0:
-            a = a + self.acqf_g(x, mu_x=mu, sigma_x=sigma)
-        if self.phi_r > 0 and self.reference_spectra_x is not None and self.reference_spectra_y is not None:
-            a = a + self.acqf_r(x, mu_x=mu, sigma_x=sigma)
+            a_g = self.acqf_g(x, mu_x=mu, sigma_x=sigma)
+        else:
+            a_g = 0.0
+        if self.phi_r > 0:
+            a_r = self.acqf_r(x, mu_x=mu, sigma_x=sigma)
+        else:
+            a_r = 0.0
+        a = a * torch.clip(a_g + a_r, self.addon_term_lower_bound, None)
+        if self.debug:
+            self._plot_acquisition_values(locals())
         return a
+
+    def _plot_acquisition_values(self, func_locals):
+        mu = func_locals['mu']
+        sigma = func_locals['sigma']
+        a_g = func_locals['a_g']
+        a_r = func_locals['a_r']
+        a = func_locals['a']
+        x = func_locals['x']
+        if len(x) > 100:
+            fig, ax = plt.subplots(5, 1)
+            ax[0].plot(to_numpy(mu.squeeze()))
+            ax[0].fill_between(
+                np.arange(len(mu)), to_numpy((mu - sigma).squeeze()), to_numpy((mu + sigma).squeeze()), alpha=0.5)
+            ax[1].plot(to_numpy(sigma.squeeze()))
+            ax[2].plot(to_numpy(a_g.squeeze()))
+            ax[2].plot(to_numpy(a_r.squeeze()))
+            ax[3].plot(to_numpy((a_g + a_r).squeeze()))
+            ax[4].plot(to_numpy(a.squeeze()))
+            plt.show()
