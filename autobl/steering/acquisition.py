@@ -17,20 +17,24 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
             self, model: Model,
             posterior_transform: Optional[PosteriorTransform] = None,
             maximize: bool = True,
+            beta: float = 0.99,
             add_posterior_stddev: bool = True,
             debug=False
     ) -> None:
         """
         The constructor.
 
+        :param beta: float. Decay factor of the weights of add-on terms in the acquisition function.
         :param add_posterior_stddev: bool. If False, the posterior standard deviation will not be added
-                                     to the returned value, and the acquisition function will be solely
-                                     contributed by fitting residue.
+            to the returned value, and the acquisition function will be solely
+            contributed by fitting residue.
         """
         super().__init__(model, posterior_transform, maximize)
         self.add_posterior_stddev = add_posterior_stddev
         self.debug = debug
         self.mask_func = None
+        self.phi = 0
+        self.beta = beta
 
     def set_mask_func(self, f: Callable):
         self.mask_func = f
@@ -40,6 +44,9 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
             m = self.mask_func(x).squeeze(-2).squeeze(-1)
             a = a * m
         return a
+
+    def update_hyperparams_following_schedule(self, i_iter):
+        self.phi = self.phi * self.beta ** i_iter
 
 
 class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerivedAcquisition):
@@ -52,6 +59,7 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerived
             self, model: Model,
             posterior_transform: Optional[PosteriorTransform] = None,
             maximize: bool = True,
+            beta: float = 0.99,
             reference_spectra_x: Tensor = None,
             reference_spectra_y: Tensor = None,
             phi: float = 0.1,
@@ -70,7 +78,7 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerived
             to the returned value, and the acquisition function will be solely
             contributed by fitting residue.
         """
-        super().__init__(model, posterior_transform, maximize, add_posterior_stddev, debug)
+        super().__init__(model, posterior_transform, maximize, beta, add_posterior_stddev, debug)
         self.reference_spectra_x = reference_spectra_x
         self.reference_spectra_y = reference_spectra_y
         self.phi = phi
@@ -123,6 +131,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
             self, model: Model,
             posterior_transform: Optional[PosteriorTransform] = None,
             maximize: bool = True,
+            beta: float = 0.99,
             gradient_dims: Optional[list[int, ...]] = None,
             phi: float = 0.1,
             phi2: float = 0.001,
@@ -149,7 +158,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
             scale (between 0 and 1).
         :param add_posterior_stddev: bool. If True, posterior standard deviation is added to the function value.
         """
-        super().__init__(model, posterior_transform, maximize, add_posterior_stddev, debug)
+        super().__init__(model, posterior_transform, maximize, beta, add_posterior_stddev, debug)
         self.gradient_dims = gradient_dims
         self.phi = phi
         self.phi2 = phi2
@@ -161,6 +170,10 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
             raise ValueError("When method is 'analytical', order can only be 1.")
         if method not in ['analytical', 'numerical']:
             raise ValueError("'method' can only be 'analytical' or 'numerical'.")
+
+    def update_hyperparams_following_schedule(self, i_iter):
+        self.phi = self.phi * self.beta ** i_iter
+        self.phi2 = self.phi2 * self.beta ** i_iter
 
     @t_batch_mode_transform()
     def forward(self, x: Tensor, mu_x=None, sigma_x=None) -> Tensor:
@@ -232,6 +245,7 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             model: Model,
             posterior_transform: Optional[PosteriorTransform] = None,
             maximize: bool = True,
+            beta: float = 0.99,
             gradient_dims: Optional[list[int, ...]] = None,
             gradient_order: int = 1,
             differentiation_method: str = 'analytical',
@@ -256,11 +270,12 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             acquisition function will behave like a simple posterior standard deviation, while a too small value
             prevents the algorithm from exploring regions with high uncertainty yet low add-on term values.
         """
-        super().__init__(model, posterior_transform, maximize, add_posterior_stddev, debug)
+        super().__init__(model, posterior_transform, maximize, beta, add_posterior_stddev, debug)
         self.acqf_g = GradientAwarePosteriorStandardDeviation(
             model,
             posterior_transform=posterior_transform,
             maximize=maximize,
+            beta=beta,
             gradient_dims=gradient_dims,
             method=differentiation_method,
             order=gradient_order,
@@ -272,6 +287,7 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             model,
             posterior_transform=posterior_transform,
             maximize=maximize,
+            beta=beta,
             reference_spectra_x=reference_spectra_x,
             reference_spectra_y=reference_spectra_y,
             phi=phi_r,
@@ -286,6 +302,10 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
         self.add_posterior_stddev = add_posterior_stddev
         self.addon_term_lower_bound = addon_term_lower_bound
         self.debug = debug
+
+    def update_hyperparams_following_schedule(self, i_iter):
+        self.acqf_r.update_hyperparams_following_schedule(i_iter)
+        self.acqf_g.update_hyperparams_following_schedule(i_iter)
 
     @t_batch_mode_transform()
     def forward(self, x: Tensor) -> Tensor:

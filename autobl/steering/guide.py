@@ -88,6 +88,8 @@ class GPExperimentGuide(ExperimentGuide):
             posterior_transform=botorch.acquisition.objective.UnstandardizePosteriorTransform(
                 Y_mean=self.outcome_transform.means[0], Y_std=self.outcome_transform.stdvs[0])
         )
+        if hasattr(self.acquisition_function, 'update_hyperparams_following_schedule'):
+            self.acquisition_function.update_hyperparams_following_schedule(self.n_update_calls)
 
     def build_optimizer(self):
         self.optimizer = self.config.optimizer_class(

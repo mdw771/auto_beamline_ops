@@ -103,6 +103,9 @@ class GPExperimentGuideConfig(ExperimentGuideConfig):
     noise_variance: Optional[float] = None
     """Noise variance of the observations."""
 
+    beta: float = 0.99
+    """Decay factor of the weights of add-on terms in the acquisition function."""
+
     def __post_init__(self):
         super().__post_init__()
         if 'input_transform' in self.model_params.keys():
