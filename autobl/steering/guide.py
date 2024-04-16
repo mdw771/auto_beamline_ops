@@ -9,6 +9,7 @@ from botorch.models.transforms.input import Normalize
 import gpytorch
 import numpy as np
 import torch
+import scipy
 import matplotlib.pyplot as plt
 
 from autobl.steering.configs import *
@@ -34,7 +35,6 @@ class GPExperimentGuide(ExperimentGuide):
 
     def __init__(self, config: GPExperimentGuideConfig, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
-        assert isinstance(self.config, GPExperimentGuideConfig)
         self.model = None
         self.fitting_func = None
         self.acquisition_function = None
@@ -43,6 +43,8 @@ class GPExperimentGuide(ExperimentGuide):
         self.data_y = torch.tensor([])
         self.input_transform = None
         self.outcome_transform = None
+        self.n_suggest_calls = 0
+        self.n_update_calls = 0
 
     def build(self, x_train=None, y_train=None):
         """
@@ -53,10 +55,15 @@ class GPExperimentGuide(ExperimentGuide):
         :param y_train: Optional[Tensor]. Observations of the data for training the GP model and finding hyperparameters
                         (e.g., kernel paraemters).
         """
+        self.build_counters()
         self.build_transform()
         self.build_model(x_train, y_train)
         self.build_acquisition_function()
         self.build_optimizer()
+
+    def build_counters(self):
+        self.n_suggest_calls = 0
+        self.n_update_calls = 0
 
     def build_transform(self):
         self.input_transform = Normalize(d=self.config.dim_measurement_space)
@@ -179,6 +186,7 @@ class GPExperimentGuide(ExperimentGuide):
     def suggest(self):
         candidate, acq_val = self.optimizer.maximize(self.acquisition_function)
         candidate, _ = self.untransform_data(candidate)
+        self.n_suggest_calls += 1
         return candidate
 
     def update(self, x_data, y_data):
@@ -194,6 +202,7 @@ class GPExperimentGuide(ExperimentGuide):
         # condition_on_observations does not make in-place changes to the model object but creates a new object, so
         # we need to reset the model object in the acquisition function.
         self.build_acquisition_function()
+        self.n_update_calls += 1
 
     def train_model(self, x_data, y_data):
         # Create model and compute covariance matrix.
@@ -213,10 +222,14 @@ class GPExperimentGuide(ExperimentGuide):
             logging.info('Kernel lengthscale (normalized & standardized) overriden to: {}'.format(
                 self.config.override_kernel_lengthscale))
 
-    def get_posterior_mean_and_std(self, x):
-        x_transformed, _ = self.transform_data(x, None, train=False)
+    def get_posterior_mean_and_std(self, x, transform=True, untransform=True):
+        if transform:
+            x_transformed, _ = self.transform_data(x, None, train=False)
+        else:
+            x_transformed = x
         posterior = self.model.posterior(x_transformed)
-        posterior = self.untransform_posterior(posterior)
+        if untransform:
+            posterior = self.untransform_posterior(posterior)
         mu = posterior.mean
         sigma = posterior.variance.clamp_min(1e-12).sqrt()
         return mu, sigma
@@ -258,3 +271,53 @@ class GPExperimentGuide(ExperimentGuide):
             return ax
         else:
             plt.show()
+
+
+class XANESExperimentGuide(GPExperimentGuide):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.acqf_mask_func = None
+
+    def update(self, x_data, y_data):
+        super().update(x_data, y_data)
+        if self.config.n_updates_create_acqf_mask_func is not None and \
+                self.n_update_calls == self.config.n_updates_create_acqf_mask_func:
+            logging.info('Building acquisition function mask with floor value {}.'.format(self.config.acqf_mask_floor_value))
+            self.build_acqf_mask_function(floor_value=self.config.acqf_mask_floor_value)
+
+    def build_acquisition_function(self):
+        super().build_acquisition_function()
+        self.acquisition_function.set_mask_func(self.acqf_mask_func)
+
+    def build_acqf_mask_function(self, floor_value=0.1):
+        """
+        Create and set a mask function to the acquisition function, such that it lowers the values in pre-edge
+        regions.
+        """
+        if not hasattr(self.acquisition_function, 'set_mask_func'):
+            logging.warning('Acquisition function does not have attribute "set_mask_func".')
+            self.acqf_mask_func = None
+            return
+        x = torch.linspace(0, 1, 100).reshape(-1, 1)
+        mu, _ = self.get_posterior_mean_and_std(x, transform=False)
+        mu = mu.squeeze()
+        # convert 3 eV to pixel
+        gaussian_grad_sigma = 3.0 / (self.input_transform.bounds[1][0] - self.input_transform.bounds[0][0]) * len(x)
+        gaussian_grad_sigma = float(gaussian_grad_sigma)
+        mu_grad = scipy.ndimage.gaussian_filter(to_numpy(mu), sigma=gaussian_grad_sigma, order=1)
+
+        # convert 3 eV to pixel
+        min_peak_width = float(3.0 / (self.input_transform.bounds[1][0] - self.input_transform.bounds[0][0]) * len(x))
+        peak_inds, peak_properties = scipy.signal.find_peaks(mu_grad, height=0.05, width=min_peak_width)
+
+        peak_loc_normalized = float(peak_inds[0]) / len(x)
+        peak_width_normalized = peak_properties['widths'][0] / len(x)
+
+        def mask_func(x):
+            m = sigmoid(x, r=20. / peak_width_normalized, d=peak_loc_normalized - 1.5 * peak_width_normalized)
+            m = m * (1 - floor_value) + floor_value
+            return m
+
+        self.acqf_mask_func = mask_func
+        return

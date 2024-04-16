@@ -78,3 +78,24 @@ def elementwise_derivative(f, x, order=1):
         jac2 = torch.autograd.functional.jacobian(differentiate, x, create_graph=True)
         gg = jac2[torch.tensor(range(jac2.shape[0])), torch.tensor(range(jac2.shape[0]))]
         return g, gg
+
+
+def sigmoid(x, r=1.0, d=0.0):
+    return 1.0 / (1.0 + torch.exp(-r * (x - d)))
+
+
+def fit(f, data_x, data_y, init_params, n_iters=20, opt_class=torch.optim.Adam, opt_params=None):
+    if opt_params is None:
+        opt_params = {}
+    params = init_params
+    for p in params:
+        p.requires_grad_(True)
+    opt = opt_class(params=params, **opt_params)
+    for i_iter in range(n_iters):
+        y = f(data_x, *params)
+        l = torch.mean((y - data_y) ** 2)
+        l.backward(retain_graph=True)
+        opt.step()
+    for p in params:
+        p.requires_grad_(False)
+    return params

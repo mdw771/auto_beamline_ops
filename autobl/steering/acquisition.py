@@ -35,6 +35,12 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
     def set_mask_func(self, f: Callable):
         self.mask_func = f
 
+    def apply_mask_func(self, x, a):
+        if self.mask_func is not None:
+            m = self.mask_func(x).squeeze(-2).squeeze(-1)
+            a = a * m
+        return a
+
 
 class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerivedAcquisition):
     r"""Posterior standard deviation enhanced by fitting residue.
@@ -89,6 +95,7 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerived
                             res,
                             x.squeeze())
         a = sigma + self.phi * r
+        a = self.apply_mask_func(x, a)
 
         if self.debug:
             self._plot_acquisition_values(locals())
@@ -178,6 +185,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
         if len(gradients_all_orders) > 1:
             for gg in gradients_all_orders[1:]:
                 a = a + self.phi2 * gg
+        a = self.apply_mask_func(x, a)
         return a
 
     def calculate_gradients_analytical(self, x: Tensor):
@@ -258,8 +266,7 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             order=gradient_order,
             phi=phi_g,
             phi2=phi_g2,
-            add_posterior_stddev=False,
-            debug=debug
+            add_posterior_stddev=False
         )
         self.acqf_r = FittingResiduePosteriorStandardDeviation(
             model,
@@ -268,8 +275,7 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             reference_spectra_x=reference_spectra_x,
             reference_spectra_y=reference_spectra_y,
             phi=phi_r,
-            add_posterior_stddev=False,
-            debug=debug
+            add_posterior_stddev=False
         )
         self.gradient_order = gradient_order
         self.phi_r = phi_r
@@ -297,6 +303,7 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
         else:
             a_r = 0.0
         a = a * torch.clip(a_g + a_r, self.addon_term_lower_bound, None)
+        a = self.apply_mask_func(x, a)
         if self.debug:
             self._plot_acquisition_values(locals())
         return a
@@ -318,4 +325,8 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             ax[2].plot(to_numpy(a_r.squeeze()))
             ax[3].plot(to_numpy((a_g + a_r).squeeze()))
             ax[4].plot(to_numpy(a.squeeze()))
+            if self.mask_func is not None:
+                fig, ax = plt.subplots(1, 1)
+                x_squeezed = to_numpy(x.squeeze())
+                ax.plot(to_numpy(self.mask_func(x.squeeze())))
             plt.show()

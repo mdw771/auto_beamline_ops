@@ -108,3 +108,16 @@ class GPExperimentGuideConfig(ExperimentGuideConfig):
         if 'outcome_transform' in self.model_params.keys():
             raise ValueError("I see you specified outcome_transform in model_params. Don't do it! Data are normalized/"
                              "standaridized in GPExperimentGuide automatically.")
+
+
+@dataclasses.dataclass
+class XANESExperimentGuideConfig(GPExperimentGuideConfig):
+
+    n_updates_create_acqf_mask_func: Optional[int] = None
+    """
+    If provided, the guide builds a sigmoid function that attenuates acquisition function values in pre-edge regions
+    after this number of model updates.
+    """
+
+    acqf_mask_floor_value: float = 0.1
+    """Floor value of the sigmoid function used as acquisition function mask."""
