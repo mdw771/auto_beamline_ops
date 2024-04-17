@@ -337,7 +337,7 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
         x = func_locals['x']
         x_squeezed = to_numpy(x.squeeze())
         if len(x) > 100:
-            fig, ax = plt.subplots(5, 1)
+            fig, ax = plt.subplots(5, 1, figsize=(3, 12))
             ax[0].plot(x_squeezed, to_numpy(mu.squeeze()))
             ax[0].fill_between(
                 x_squeezed, to_numpy((mu - sigma).squeeze()), to_numpy((mu + sigma).squeeze()), alpha=0.5)
@@ -350,6 +350,6 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
                 ax[3].plot(x_squeezed, to_numpy((a_g + a_r).squeeze()))
             ax[4].plot(x_squeezed, to_numpy(a.squeeze()))
             if self.mask_func is not None:
-                fig, ax = plt.subplots(1, 1)
+                fig, ax = plt.subplots(1, 1, figsize=(3, 3))
                 ax.plot(x_squeezed, to_numpy(self.mask_func(x.squeeze())))
             plt.show()
