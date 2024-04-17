@@ -119,20 +119,20 @@ class GPExperimentGuideConfig(ExperimentGuideConfig):
 @dataclasses.dataclass
 class XANESExperimentGuideConfig(GPExperimentGuideConfig):
 
-    n_updates_create_acqf_mask_func: Optional[int] = None
+    n_updates_create_acqf_weight_func: Optional[int] = None
     """
-    If provided, the guide builds a sigmoid function that attenuates acquisition function values in pre-edge regions
-    after this number of model updates.
+    If provided, the guide builds a weighting function that attenuates acquisition function values in pre-edge regions
+    and amplifies post-edge regions after this number of model updates.
     """
 
-    acqf_mask_floor_value: float = 0.1
-    """Floor value of the sigmoid function used as acquisition function mask."""
+    acqf_weight_func_floor_value: float = 0.1
+    """Floor value of the sigmoid function used as acquisition weighting function."""
 
-    acqf_mask_post_edge_gain: float = 5.0
-    """Post edge gain in acquisition mask function."""
+    acqf_weight_func_post_edge_gain: float = 5.0
+    """Post edge gain in acquisition weighting function."""
 
-    acqf_mask_post_edge_offset: float = 1.0
-    """Location of post edge gain in acquisition mask function as a multiple of edge width."""
+    acqf_weight_func_post_edge_offset: float = 1.0
+    """Location of post edge gain in acquisition weighting function as a multiple of edge width."""
 
-    acqf_mask_post_edge_width: float = 0.5
-    """Width of post edge gain in acquisition mask function as a multiple of edge width."""
+    acqf_weight_func_post_edge_width: float = 0.5
+    """Width of post edge gain in acquisition weighting function as a multiple of edge width."""

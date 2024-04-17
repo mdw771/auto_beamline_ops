@@ -290,28 +290,28 @@ class XANESExperimentGuide(GPExperimentGuide):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.acqf_mask_func = None
+        self.acqf_weight_func = None
 
     def update(self, x_data, y_data):
         super().update(x_data, y_data)
-        if self.config.n_updates_create_acqf_mask_func is not None and \
-                self.n_update_calls == self.config.n_updates_create_acqf_mask_func:
-            logging.info('Building acquisition function mask with floor value {}.'.format(self.config.acqf_mask_floor_value))
-            self.build_acqf_mask_function(floor_value=self.config.acqf_mask_floor_value)
+        if self.config.n_updates_create_acqf_weight_func is not None and \
+                self.n_update_calls == self.config.n_updates_create_acqf_weight_func:
+            logging.info('Building acquisition function mask with floor value {}.'.format(self.config.acqf_weight_func_floor_value))
+            self.build_acqf_weight_function(floor_value=self.config.acqf_weight_func_floor_value)
 
     def build_acquisition_function(self):
         super().build_acquisition_function()
-        if hasattr(self.acquisition_function, 'set_mask_func'):
-            self.acquisition_function.set_mask_func(self.acqf_mask_func)
+        if hasattr(self.acquisition_function, 'set_weight_func'):
+            self.acquisition_function.set_weight_func(self.acqf_weight_func)
 
-    def build_acqf_mask_function(self, floor_value=0.1):
+    def build_acqf_weight_function(self, floor_value=0.1):
         """
         Create and set a mask function to the acquisition function, such that it lowers the values in pre-edge
         regions.
         """
-        if not hasattr(self.acquisition_function, 'set_mask_func'):
-            logging.warning('Acquisition function does not have attribute "set_mask_func".')
-            self.acqf_mask_func = None
+        if not hasattr(self.acquisition_function, 'set_weight_func'):
+            logging.warning('Acquisition function does not have attribute "set_weight_func".')
+            self.acqf_weight_func = None
             return
         x = torch.linspace(0, 1, 100).reshape(-1, 1)
         mu, _ = self.get_posterior_mean_and_std(x, transform=False)
@@ -331,12 +331,12 @@ class XANESExperimentGuide(GPExperimentGuide):
         def mask_func(x):
             m = sigmoid(x, r=20. / peak_width_normalized, d=peak_loc_normalized - 1.7 * peak_width_normalized)
             m = m + gaussian(x,
-                             a=self.config.acqf_mask_post_edge_gain,
-                             mu=peak_loc_normalized + self.config.acqf_mask_post_edge_offset * peak_width_normalized,
-                             sigma=peak_width_normalized * self.config.acqf_mask_post_edge_width,
+                             a=self.config.acqf_weight_func_post_edge_gain,
+                             mu=peak_loc_normalized + self.config.acqf_weight_func_post_edge_offset * peak_width_normalized,
+                             sigma=peak_width_normalized * self.config.acqf_weight_func_post_edge_width,
                              c=0.0)
             m = m * (1 - floor_value) + floor_value
             return m
 
-        self.acqf_mask_func = mask_func
+        self.acqf_weight_func = mask_func
         return

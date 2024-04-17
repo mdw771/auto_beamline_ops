@@ -32,16 +32,16 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
         super().__init__(model, posterior_transform, maximize)
         self.add_posterior_stddev = add_posterior_stddev
         self.debug = debug
-        self.mask_func = None
+        self.weight_func = None
         self.phi = 0
         self.beta = beta
 
-    def set_mask_func(self, f: Callable):
-        self.mask_func = f
+    def set_weight_func(self, f: Callable):
+        self.weight_func = f
 
-    def apply_mask_func(self, x, a):
-        if self.mask_func is not None:
-            m = self.mask_func(x).squeeze(-2).squeeze(-1)
+    def apply_weight_func(self, x, a):
+        if self.weight_func is not None:
+            m = self.weight_func(x).squeeze(-2).squeeze(-1)
             a = a * m
         return a
 
@@ -103,22 +103,26 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerived
                             res,
                             x.squeeze())
         a = sigma + self.phi * r
-        a = self.apply_mask_func(x, a)
+        a = self.apply_weight_func(x, a)
 
         if self.debug:
             self._plot_acquisition_values(locals())
         return a
 
     def _plot_acquisition_values(self, func_locals):
-        mu = func_locals['mu']
-        y_fit = func_locals['y_fit']
-        res = func_locals['res']
-        fig, ax = plt.subplots(1, 1)
-        ax.plot(to_numpy(self.reference_spectra_x.squeeze()), to_numpy(mu.squeeze()))
-        ax.plot(to_numpy(self.reference_spectra_x.squeeze()), to_numpy(y_fit.squeeze()))
-        ax2 = ax.twinx()
-        ax2.plot(to_numpy(self.reference_spectra_x.squeeze()), to_numpy(res.squeeze()), color='red')
-        plt.show()
+        x = func_locals['x']
+        if len(x) > 100:
+            mu = func_locals['mu']
+            y_fit = func_locals['y_fit']
+            res = func_locals['res']
+            fig, ax = plt.subplots(1, 1)
+            ax.plot(to_numpy(self.reference_spectra_x.squeeze()), to_numpy(mu.squeeze()), label='mu')
+            ax.plot(to_numpy(self.reference_spectra_x.squeeze()), to_numpy(y_fit.squeeze()), label='fit')
+            ax2 = ax.twinx()
+            ax2.plot(to_numpy(self.reference_spectra_x.squeeze()), to_numpy(res.squeeze()), color='red', label='residue')
+            ax.legend(loc='upper left')
+            ax2.legend(loc='center left')
+            plt.show()
 
 
 class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedAcquisition):
@@ -198,7 +202,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
         if len(gradients_all_orders) > 1:
             for gg in gradients_all_orders[1:]:
                 a = a + self.phi2 * gg
-        a = self.apply_mask_func(x, a)
+        a = self.apply_weight_func(x, a)
         return a
 
     def calculate_gradients_analytical(self, x: Tensor):
@@ -291,7 +295,8 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             reference_spectra_x=reference_spectra_x,
             reference_spectra_y=reference_spectra_y,
             phi=phi_r,
-            add_posterior_stddev=False
+            add_posterior_stddev=False,
+            debug=debug
         )
         self.gradient_order = gradient_order
         self.phi_r = phi_r
@@ -323,7 +328,7 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
         else:
             a_r = torch.tensor(0.0, device=x.device)
         a = a * torch.clip(a_g + a_r, self.addon_term_lower_bound, None)
-        a = self.apply_mask_func(x, a)
+        a = self.apply_weight_func(x, a)
         if self.debug:
             self._plot_acquisition_values(locals())
         return a
@@ -338,18 +343,24 @@ class ComprehensiveAigmentedAcquisitionFunction(PosteriorStandardDeviationDerive
         x_squeezed = to_numpy(x.squeeze())
         if len(x) > 100:
             fig, ax = plt.subplots(5, 1, figsize=(3, 12))
-            ax[0].plot(x_squeezed, to_numpy(mu.squeeze()))
+            ax[0].plot(x_squeezed, to_numpy(mu.squeeze()), label='mu')
             ax[0].fill_between(
                 x_squeezed, to_numpy((mu - sigma).squeeze()), to_numpy((mu + sigma).squeeze()), alpha=0.5)
-            ax[1].plot(x_squeezed, to_numpy(sigma.squeeze()))
+            ax[0].legend(bbox_to_anchor=(1, 0.5))
+            ax[1].plot(x_squeezed, to_numpy(sigma.squeeze()), label='sigma')
+            ax[1].legend(bbox_to_anchor=(1, 0.5))
             if self.phi_g > 0:
-                ax[2].plot(x_squeezed, to_numpy(a_g.squeeze()))
+                ax[2].plot(x_squeezed, to_numpy(a_g.squeeze()), label='a_g')
             if self.phi_r > 0:
-                ax[2].plot(x_squeezed, to_numpy(a_r.squeeze()))
+                ax[2].plot(x_squeezed, to_numpy(a_r.squeeze()), label='a_r')
+            ax[2].legend(bbox_to_anchor=(1, 0.5))
             if self.phi_g > 0 or self.phi_r:
-                ax[3].plot(x_squeezed, to_numpy((a_g + a_r).squeeze()))
-            ax[4].plot(x_squeezed, to_numpy(a.squeeze()))
-            if self.mask_func is not None:
+                ax[3].plot(x_squeezed, to_numpy((a_g + a_r).squeeze()), label='a_g + a_r')
+                ax[3].legend(bbox_to_anchor=(1, 0.5))
+            ax[4].plot(x_squeezed, to_numpy(a.squeeze()), label='a')
+            ax[4].legend(bbox_to_anchor=(1, 0.5))
+            if self.weight_func is not None:
                 fig, ax = plt.subplots(1, 1, figsize=(3, 3))
-                ax.plot(x_squeezed, to_numpy(self.mask_func(x.squeeze())))
+                ax.plot(x_squeezed, to_numpy(self.weight_func(x.squeeze())))
+                ax.set_title('Weight function')
             plt.show()
