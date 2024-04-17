@@ -95,7 +95,7 @@ def get_save_name_prefix(config, guide):
     if config.acquisition_function_class in [GradientAwarePosteriorStandardDeviation,
                                              FittingResiduePosteriorStandardDeviation]:
         acquisition_info += '_phi_{}'.format(guide.acquisition_function.phi)
-    if config.acquisition_function_class == ComprehensiveAigmentedAcquisitionFunction:
+    if config.acquisition_function_class == ComprehensiveAugmentedAcquisitionFunction:
         acquisition_info += '_gradOrder_{}_phiG_{}_phiR_{}'.format(guide.acquisition_function.gradient_order,
                                                                    guide.acquisition_function.phi_g,
                                                                    guide.acquisition_function.phi_r)
@@ -170,26 +170,28 @@ def test_xanes_gp_fitres_2nd_order_deriv(generate_gold=False, debug=False):
     ref_spectra_0 = torch.tensor(data_all_spectra.iloc[1].to_numpy())
     ref_spectra_1 = torch.tensor(data_all_spectra.iloc[-1].to_numpy())
     ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
-    ref_spectra_x = torch.linspace(0, 1, ref_spectra_y.shape[-1])
+    ref_spectra_x = energies
 
     config = XANESExperimentGuideConfig(
         dim_measurement_space=1,
         num_candidates=1,
         model_class=botorch.models.SingleTaskGP,
         model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
-        acquisition_function_class=ComprehensiveAigmentedAcquisitionFunction,
+        acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
         acquisition_function_params={'gradient_order': 2,
                                      'differentiation_method': 'numerical',
                                      'reference_spectra_x': ref_spectra_x,
                                      'reference_spectra_y': ref_spectra_y,
-                                     'phi_r': 100,
-                                     'phi_g': 2e-2,
-                                     'phi_g2': 3e-4},
+                                     'phi_r': 1e3,
+                                     'phi_g': 1e-2,
+                                     'phi_g2': 1e-4,
+                                     'debug': False
+                                     },
         override_kernel_lengthscale=7,
         lower_bounds=torch.tensor([energies[0]]),
         upper_bounds=torch.tensor([energies[-1]]),
         optimizer_class=TorchOptimizer,
-        optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 20}}
+        optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 20}},
     )
 
     candidate_list = run_simulated_experiment(
@@ -236,7 +238,7 @@ def test_xanes_gp_fitres_2nd_order_deriv_with_weight_func_ybco_data(generate_gol
     y_init = instrument.measure(x_init).reshape(-1, 1)
 
     ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
-    ref_spectra_x = torch.linspace(0, 1, ref_spectra_y.shape[-1])
+    ref_spectra_x = energies
 
     config = XANESExperimentGuideConfig(
         dim_measurement_space=1,
@@ -247,15 +249,16 @@ def test_xanes_gp_fitres_2nd_order_deriv_with_weight_func_ybco_data(generate_gol
         override_kernel_lengthscale=7,
         lower_bounds=torch.tensor([energies[0]]),
         upper_bounds=torch.tensor([energies[-1]]),
-        acquisition_function_class=ComprehensiveAigmentedAcquisitionFunction,
+        acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
         acquisition_function_params={'gradient_order': 2,
                                      'differentiation_method': 'numerical',
                                      'reference_spectra_x': ref_spectra_x,
                                      'reference_spectra_y': ref_spectra_y,
-                                     'phi_r': 1e1,
+                                     'phi_r': 1e3,
                                      'phi_g': 1e-2,  # 2e-2,
                                      'phi_g2': 1e-4,  # 3e-4
                                      'addon_term_lower_bound': 1e-2,
+                                     'debug': False
                                      },
         optimizer_class=TorchOptimizer,
         optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 20}},
@@ -292,5 +295,5 @@ if __name__ == '__main__':
     parser.add_argument('--generate-gold', action='store_true')
     args = parser.parse_args()
 
-    # test_xanes_gp_fitres_2nd_order_deriv(generate_gold=args.generate_gold, debug=True)
+    test_xanes_gp_fitres_2nd_order_deriv(generate_gold=args.generate_gold, debug=True)
     test_xanes_gp_fitres_2nd_order_deriv_with_weight_func_ybco_data(generate_gold=args.generate_gold, debug=True)

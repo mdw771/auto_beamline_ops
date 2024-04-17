@@ -13,12 +13,13 @@ import scipy
 import matplotlib.pyplot as plt
 
 from autobl.steering.configs import *
+from autobl.steering.acquisition import PosteriorStandardDeviationDerivedAcquisition
 from autobl.util import *
 
 
 class ExperimentGuide:
 
-    def __init__(self, config: ExperimentGuideConfig, *args, **kwargs):
+    def __init__(self, config, *args, **kwargs):
         self.config = config
 
     def build(self, *args, **kwargs):
@@ -82,8 +83,13 @@ class GPExperimentGuide(ExperimentGuide):
         if issubclass(self.config.acquisition_function_class, botorch.acquisition.AnalyticAcquisitionFunction):
             assert self.config.num_candidates == 1, ('Since an analytical acquisition function is used, '
                                                      'num_candidates must be 1.')
+        additional_params = {}
+        if issubclass(self.config.acquisition_function_class, PosteriorStandardDeviationDerivedAcquisition):
+            additional_params['input_transform'] = self.input_transform
+
         self.acquisition_function = self.config.acquisition_function_class(
             self.model,
+            **additional_params,
             **self.config.acquisition_function_params,
             posterior_transform=botorch.acquisition.objective.UnstandardizePosteriorTransform(
                 Y_mean=self.outcome_transform.means[0], Y_std=self.outcome_transform.stdvs[0])
