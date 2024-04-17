@@ -19,7 +19,8 @@ dependencies = [
     "jupyter",
     "ipywidgets",
     "scikit-learn",
-    "scikit-image"
+    "scikit-image",
+    "pandas"
 ]
 version = "0.0.1"
 
