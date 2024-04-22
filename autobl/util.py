@@ -102,3 +102,7 @@ def fit(f, data_x, data_y, init_params, n_iters=20, opt_class=torch.optim.Adam, 
     for p in params:
         p.requires_grad_(False)
     return params
+
+
+def rms(actual, true):
+    return np.sqrt(np.mean((actual - true) ** 2))
