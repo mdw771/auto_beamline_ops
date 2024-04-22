@@ -29,6 +29,7 @@ class ScanningExperiment(Experiment):
         super().__init__()
         self.guide_confgis = guide_configs
         self.name = name
+        self.candidate_list = []
 
 
 class SimulatedScanningExperiment(ScanningExperiment):
@@ -66,6 +67,9 @@ class SimulatedScanningExperiment(ScanningExperiment):
         self.n_pts_measured += n
         return x_init, y_init
 
+    def update_candidate_list(self, candidates):
+        self.candidate_list.append(candidates.squeeze().detach().cpu().numpy())
+
     def run(self, n_initial_measurements=10, n_target_measurements=70, n_plot_interval=5):
         x_init, y_init = self.take_initial_measurements(n_initial_measurements)
         self.initialize_guide(x_init, y_init)
@@ -78,6 +82,7 @@ class SimulatedScanningExperiment(ScanningExperiment):
 
         for i in tqdm.trange(n_target_measurements):
             candidates = self.guide.suggest().double()
+            self.update_candidate_list(candidates)
             y_new = self.instrument.measure(candidates).unsqueeze(-1)
             self.guide.update(candidates, y_new)
             self.n_pts_measured += len(candidates)
