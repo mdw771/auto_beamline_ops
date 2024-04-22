@@ -46,9 +46,9 @@ configs = XANESExperimentGuideConfig(
                                  'differentiation_method': 'numerical',
                                  'reference_spectra_x': ref_spectra_x,
                                  'reference_spectra_y': ref_spectra_y,
-                                 'phi_r': 1e3,
-                                 'phi_g': 1e-2,
-                                 'phi_g2': 1e-4,
+                                 'phi_r': None, #1e3,
+                                 'phi_g': None, #1e-2,
+                                 'phi_g2': None, #1e-4,
                                  'addon_term_lower_bound': 3e-2,
                                  'debug': False},
     n_updates_create_acqf_weight_func=5,
@@ -72,4 +72,4 @@ configs = XANESExperimentGuideConfig(
 
 experiment = SimulatedScanningExperiment(configs, 'Sample1_50C_XANES', run_analysis=True)
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=10, n_target_measurements=70)
+experiment.run(n_initial_measurements=10, n_target_measurements=70, n_plot_interval=5)

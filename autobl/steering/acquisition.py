@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Callable
 
 import botorch
@@ -19,7 +20,7 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
             input_transform: Optional[Normalize] = None,
             posterior_transform: Optional[PosteriorTransform] = None,
             maximize: bool = True,
-            beta: float = 0.99,
+            beta: float = 0.98,
             add_posterior_stddev: bool = True,
             debug=False
     ) -> None:
@@ -39,6 +40,7 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
         self.weight_func = None
         self.phi = 0
         self.beta = beta
+        self.intermediate_data = {}
 
     def set_weight_func(self, f: Callable):
         self.weight_func = f
@@ -49,8 +51,8 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
             a = a * m
         return a
 
-    def update_hyperparams_following_schedule(self, i_iter):
-        self.phi = self.phi * self.beta ** i_iter
+    def update_hyperparams_following_schedule(self):
+        self.phi = self.phi * self.beta
 
 
 class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerivedAcquisition):
@@ -87,6 +89,22 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerived
         self.reference_spectra_x = self.input_transform.transform(reference_spectra_x.reshape(-1, 1)).squeeze()
         self.reference_spectra_y = reference_spectra_y
         self.phi = phi
+        if self.phi is None:
+            self.estimate_weights()
+
+    def estimate_weights(self):
+        self.phi = 1.0
+
+        x = torch.linspace(0, 1, 100).view([-1, 1, 1])
+        add_posterior_stddev_orig = self.add_posterior_stddev
+        self.add_posterior_stddev = True
+        a = self.forward(x)
+        self.add_posterior_stddev = add_posterior_stddev_orig
+
+        sigma = self.intermediate_data['sigma']
+        r = self.intermediate_data['r']
+        self.phi = sigma.max() / r.max() * 3.0
+        logging.info('Automatically determined fitting residue weights: phi = {}.'.format(self.phi))
 
     @t_batch_mode_transform()
     def forward(self, x: Tensor, sigma_x=None, **kwargs) -> Tensor:
@@ -109,6 +127,8 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerived
                             x.squeeze())
         a = sigma + self.phi * r
         a = self.apply_weight_func(x, a)
+
+        self.intermediate_data = {'sigma': sigma, 'r': r}
 
         if self.debug:
             self._plot_acquisition_values(locals())
@@ -148,8 +168,8 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
             maximize: bool = True,
             beta: float = 0.99,
             gradient_dims: Optional[list[int, ...]] = None,
-            phi: float = 0.1,
-            phi2: float = 0.001,
+            phi: Optional[float] = 0.1,
+            phi2: Optional[float] = 0.001,
             method: str = 'analytical',
             order: int = 1,
             finite_difference_interval: float = 1e-2,
@@ -161,7 +181,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
 
         :param gradient_dims: Optional[list[int, ...]]. The dimensions along which the magnitude of gradient should
             be computed. If None, it will be assumed to be the last dimension.
-        :param phi: float. The weight of the gradient term.
+        :param phi: float. The weight of the gradient term. If None, it will be automatically determined.
         :param phi2: float. The weight of the second or higher-order derivative term. Disregarded if `order == 1`.
         :param method: str. Can be "analytical" or "numerical". If "analytical", gradients are calculated using
             automatic differentiation. Due to the limitation of BoTorch, only first-order derivative is
@@ -185,10 +205,29 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
             raise ValueError("When method is 'analytical', order can only be 1.")
         if method not in ['analytical', 'numerical']:
             raise ValueError("'method' can only be 'analytical' or 'numerical'.")
+        if self.phi is None or self.phi2 is None:
+            self.estimate_weights()
 
-    def update_hyperparams_following_schedule(self, i_iter):
-        self.phi = self.phi * self.beta ** i_iter
-        self.phi2 = self.phi2 * self.beta ** i_iter
+    def update_hyperparams_following_schedule(self):
+        self.phi = self.phi * self.beta
+        self.phi2 = self.phi2 * self.beta
+
+    def estimate_weights(self):
+        self.phi = 1.0
+        self.phi2 = 1.0
+
+        x = torch.linspace(0, 1, 100).view([-1, 1, 1])
+        add_posterior_stddev_orig = self.add_posterior_stddev
+        self.add_posterior_stddev = True
+        a = self.forward(x)
+        self.add_posterior_stddev = add_posterior_stddev_orig
+
+        sigma = self.intermediate_data['sigma']
+        gradients_all_orders = self.intermediate_data['gradients_all_orders']
+        self.phi = sigma.max() / gradients_all_orders[0].max()
+        if len(gradients_all_orders) > 1:
+            self.phi2 = sigma.max() / gradients_all_orders[1].max()
+        logging.info('Automatically determined gradient weights: phi = {}, phi2 = {}.'.format(self.phi, self.phi2))
 
     @t_batch_mode_transform()
     def forward(self, x: Tensor, mu_x=None, sigma_x=None) -> Tensor:
@@ -214,6 +253,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
             for gg in gradients_all_orders[1:]:
                 a = a + self.phi2 * gg
         a = self.apply_weight_func(x, a)
+        self.intermediate_data = {'sigma': sigma, 'gradients_all_orders': gradients_all_orders}
         return a
 
     def calculate_gradients_analytical(self, x: Tensor):
@@ -313,18 +353,18 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             debug=debug
         )
         self.gradient_order = gradient_order
-        self.phi_r = phi_r
-        self.phi_g = phi_g
-        self.phi_g2 = phi_g2
+        self.phi_r = self.acqf_r.phi
+        self.phi_g = self.acqf_g.phi
+        self.phi_g2 = self.acqf_g.phi2
         self.reference_spectra_x = reference_spectra_x
         self.reference_spectra_y = reference_spectra_y
         self.add_posterior_stddev = add_posterior_stddev
         self.addon_term_lower_bound = addon_term_lower_bound
         self.debug = debug
 
-    def update_hyperparams_following_schedule(self, i_iter):
-        self.acqf_r.update_hyperparams_following_schedule(i_iter)
-        self.acqf_g.update_hyperparams_following_schedule(i_iter)
+    def update_hyperparams_following_schedule(self):
+        self.acqf_r.update_hyperparams_following_schedule()
+        self.acqf_g.update_hyperparams_following_schedule()
 
     @t_batch_mode_transform()
     def forward(self, x: Tensor) -> Tensor:

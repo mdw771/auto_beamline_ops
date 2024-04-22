@@ -63,9 +63,9 @@ configs = XANESExperimentGuideConfig(
                                  'differentiation_method': 'numerical',
                                  'reference_spectra_x': ref_spectra_x,
                                  'reference_spectra_y': ref_spectra_y,
-                                 'phi_r': 1e3,
-                                 'phi_g': 1e-2, #2e-2,
-                                 'phi_g2': 1e-4, #3e-4
+                                 'phi_r': None,
+                                 'phi_g': None, #2e-2,
+                                 'phi_g2': None, #3e-4
                                  'addon_term_lower_bound': 3e-2,
                                  'debug': False
                                  },
@@ -90,4 +90,4 @@ configs = XANESExperimentGuideConfig(
 
 experiment = SimulatedScanningExperiment(configs, 'YBCO3data', run_analysis=True)
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=20, n_target_measurements=40, n_plot_interval=1)
+experiment.run(n_initial_measurements=20, n_target_measurements=40, n_plot_interval=5)

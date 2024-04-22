@@ -94,8 +94,6 @@ class GPExperimentGuide(ExperimentGuide):
             posterior_transform=botorch.acquisition.objective.UnstandardizePosteriorTransform(
                 Y_mean=self.outcome_transform.means[0], Y_std=self.outcome_transform.stdvs[0])
         )
-        if hasattr(self.acquisition_function, 'update_hyperparams_following_schedule'):
-            self.acquisition_function.update_hyperparams_following_schedule(self.n_update_calls)
 
     def build_optimizer(self):
         self.optimizer = self.config.optimizer_class(
@@ -212,7 +210,9 @@ class GPExperimentGuide(ExperimentGuide):
         self.model = self.model.condition_on_observations(x_data, y_data, **additional_params)
         # condition_on_observations does not make in-place changes to the model object but creates a new object, so
         # we need to reset the model object in the acquisition function.
-        self.build_acquisition_function()
+        self.acquisition_function.model = self.model
+        if hasattr(self.acquisition_function, 'update_hyperparams_following_schedule'):
+            self.acquisition_function.update_hyperparams_following_schedule()
         self.n_update_calls += 1
 
     def train_model(self, x_data, y_data):
@@ -304,6 +304,7 @@ class XANESExperimentGuide(GPExperimentGuide):
                 self.n_update_calls == self.config.n_updates_create_acqf_weight_func:
             logging.info('Building acquisition function mask with floor value {}.'.format(self.config.acqf_weight_func_floor_value))
             self.build_acqf_weight_function(floor_value=self.config.acqf_weight_func_floor_value)
+            self.acquisition_function.set_weight_func(self.acqf_weight_func)
 
     def build_acquisition_function(self):
         super().build_acquisition_function()
@@ -335,7 +336,7 @@ class XANESExperimentGuide(GPExperimentGuide):
         peak_width_normalized = peak_properties['widths'][0] / len(x)
 
         def mask_func(x):
-            m = sigmoid(x, r=20. / peak_width_normalized, d=peak_loc_normalized - 1.7 * peak_width_normalized)
+            m = sigmoid(x, r=20. / peak_width_normalized, d=peak_loc_normalized - 1.6 * peak_width_normalized)
             m = m + gaussian(x,
                              a=self.config.acqf_weight_func_post_edge_gain,
                              mu=peak_loc_normalized + self.config.acqf_weight_func_post_edge_offset * peak_width_normalized,
