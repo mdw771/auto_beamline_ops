@@ -207,10 +207,9 @@ class GPExperimentGuide(ExperimentGuide):
         additional_params = {}
         if self.config.noise_variance is not None:
             additional_params['noise'] = torch.full_like(y_data, self.config.noise_variance)
-        self.model = self.model.condition_on_observations(x_data, y_data, **additional_params)
-        # condition_on_observations does not make in-place changes to the model object but creates a new object, so
-        # we need to reset the model object in the acquisition function.
-        self.acquisition_function.model = self.model
+        new_model = self.model.condition_on_observations(x_data, y_data, **additional_params)
+        # In-place update all attribute in self.model so that all references get updated.
+        self.model.__dict__ = new_model.__dict__
         if hasattr(self.acquisition_function, 'update_hyperparams_following_schedule'):
             self.acquisition_function.update_hyperparams_following_schedule()
         self.n_update_calls += 1
@@ -281,7 +280,7 @@ class GPExperimentGuide(ExperimentGuide):
         ax[0].plot(x, mu, label='Posterior mean')
         ax[0].fill_between(x, mu - sigma, mu + sigma, alpha=0.5)
         data_x, data_y = self.untransform_data(self.data_x, self.data_y)
-        ax[0].scatter(to_numpy(data_x.reshape(-1)), to_numpy(data_y.reshape(-1)), label='Measured data')
+        ax[0].scatter(to_numpy(data_x.reshape(-1)), to_numpy(data_y.reshape(-1)), label='Measured data', s=4)
         ax[0].set_title('Posterior mean and $+/-\sigma$ interval')
         if len(ax) > 1:
             ax[1].plot(x, acq)

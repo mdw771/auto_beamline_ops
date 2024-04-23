@@ -66,6 +66,8 @@ configs = XANESExperimentGuideConfig(
                                  'phi_r': None,
                                  'phi_g': None, #2e-2,
                                  'phi_g2': None, #3e-4
+                                 'beta': 0.999,
+                                 'gamma': 0.95,
                                  'addon_term_lower_bound': 3e-2,
                                  'debug': False
                                  },

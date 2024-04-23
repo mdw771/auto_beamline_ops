@@ -20,7 +20,8 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
             input_transform: Optional[Normalize] = None,
             posterior_transform: Optional[PosteriorTransform] = None,
             maximize: bool = True,
-            beta: float = 0.98,
+            beta: float = 0.95,
+            gamma: float = 0.95,
             add_posterior_stddev: bool = True,
             debug=False
     ) -> None:
@@ -28,6 +29,8 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
         The constructor.
 
         :param beta: float. Decay factor of the weights of add-on terms in the acquisition function.
+        :param gamma: float. Decay factor of the mixing coefficient between the weighting function and the original
+            value.
         :param input_transform: Optional[Normalize]. The transform object used for normalizing x.
         :param add_posterior_stddev: bool. If False, the posterior standard deviation will not be added
             to the returned value, and the acquisition function will be solely
@@ -38,8 +41,10 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
         self.add_posterior_stddev = add_posterior_stddev
         self.debug = debug
         self.weight_func = None
+        self.alpha = 1.0
         self.phi = 0
         self.beta = beta
+        self.gamma = gamma
         self.intermediate_data = {}
 
     def set_weight_func(self, f: Callable):
@@ -48,11 +53,12 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
     def apply_weight_func(self, x, a):
         if self.weight_func is not None:
             m = self.weight_func(x).squeeze(-2).squeeze(-1)
-            a = a * m
+            a = (self.alpha * m + 1 - self.alpha) * a
         return a
 
     def update_hyperparams_following_schedule(self):
         self.phi = self.phi * self.beta
+        self.alpha = self.alpha * self.gamma
 
 
 class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerivedAcquisition):
@@ -67,6 +73,7 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerived
             posterior_transform: Optional[PosteriorTransform] = None,
             maximize: bool = True,
             beta: float = 0.99,
+            gamma: float = 0.95,
             reference_spectra_x: Tensor = None,
             reference_spectra_y: Tensor = None,
             phi: float = 0.1,
@@ -85,7 +92,8 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerived
             to the returned value, and the acquisition function will be solely
             contributed by fitting residue.
         """
-        super().__init__(model, input_transform, posterior_transform, maximize, beta, add_posterior_stddev, debug)
+        super().__init__(model, input_transform, posterior_transform, maximize, beta, gamma,
+                         add_posterior_stddev, debug)
         self.reference_spectra_x = self.input_transform.transform(reference_spectra_x.reshape(-1, 1)).squeeze()
         self.reference_spectra_y = reference_spectra_y
         self.phi = phi
@@ -103,7 +111,7 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerived
 
         sigma = self.intermediate_data['sigma']
         r = self.intermediate_data['r']
-        self.phi = sigma.max() / r.max() * 3.0
+        self.phi = sigma.max() / r.max() * 5.0
         logging.info('Automatically determined fitting residue weights: phi = {}.'.format(self.phi))
 
     @t_batch_mode_transform()
@@ -167,6 +175,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
             posterior_transform: Optional[PosteriorTransform] = None,
             maximize: bool = True,
             beta: float = 0.99,
+            gamma: float = 0.95,
             gradient_dims: Optional[list[int, ...]] = None,
             phi: Optional[float] = 0.1,
             phi2: Optional[float] = 0.001,
@@ -193,7 +202,8 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
             scale (between 0 and 1).
         :param add_posterior_stddev: bool. If True, posterior standard deviation is added to the function value.
         """
-        super().__init__(model, input_transform, posterior_transform, maximize, beta, add_posterior_stddev, debug)
+        super().__init__(model, input_transform, posterior_transform, maximize, beta, gamma,
+                         add_posterior_stddev, debug)
         self.gradient_dims = gradient_dims
         self.phi = phi
         self.phi2 = phi2
@@ -211,6 +221,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
     def update_hyperparams_following_schedule(self):
         self.phi = self.phi * self.beta
         self.phi2 = self.phi2 * self.beta
+        self.alpha = self.alpha * self.gamma
 
     def estimate_weights(self):
         self.phi = 1.0
@@ -224,9 +235,9 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
 
         sigma = self.intermediate_data['sigma']
         gradients_all_orders = self.intermediate_data['gradients_all_orders']
-        self.phi = sigma.max() / gradients_all_orders[0].max()
+        self.phi = sigma.max() / gradients_all_orders[0].max() * 0.5
         if len(gradients_all_orders) > 1:
-            self.phi2 = sigma.max() / gradients_all_orders[1].max()
+            self.phi2 = sigma.max() / gradients_all_orders[1].max() * 0.5
         logging.info('Automatically determined gradient weights: phi = {}, phi2 = {}.'.format(self.phi, self.phi2))
 
     @t_batch_mode_transform()
@@ -301,7 +312,8 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             input_transform: Optional[Normalize] = None,
             posterior_transform: Optional[PosteriorTransform] = None,
             maximize: bool = True,
-            beta: float = 0.99,
+            beta: float = 0.999,
+            gamma: float = 0.95,
             gradient_dims: Optional[list[int, ...]] = None,
             gradient_order: int = 1,
             differentiation_method: str = 'analytical',
@@ -326,13 +338,15 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             acquisition function will behave like a simple posterior standard deviation, while a too small value
             prevents the algorithm from exploring regions with high uncertainty yet low add-on term values.
         """
-        super().__init__(model, input_transform, posterior_transform, maximize, beta, add_posterior_stddev, debug)
+        super().__init__(model, input_transform, posterior_transform, maximize, beta, gamma,
+                         add_posterior_stddev, debug)
         self.acqf_g = GradientAwarePosteriorStandardDeviation(
             model,
             input_transform=input_transform,
             posterior_transform=posterior_transform,
             maximize=maximize,
             beta=beta,
+            gamma=gamma,
             gradient_dims=gradient_dims,
             method=differentiation_method,
             order=gradient_order,
@@ -346,6 +360,7 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             posterior_transform=posterior_transform,
             maximize=maximize,
             beta=beta,
+            gamma=gamma,
             reference_spectra_x=reference_spectra_x,
             reference_spectra_y=reference_spectra_y,
             phi=phi_r,
@@ -365,11 +380,13 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
     def update_hyperparams_following_schedule(self):
         self.acqf_r.update_hyperparams_following_schedule()
         self.acqf_g.update_hyperparams_following_schedule()
+        self.alpha = self.alpha * self.gamma
 
     @t_batch_mode_transform()
     def forward(self, x: Tensor) -> Tensor:
         mu, sigma = self._mean_and_sigma(x)
         if self.add_posterior_stddev:
+            # a = torch.clip(sigma, 0.4, None)#
             a = sigma - sigma.min()
         else:
             a = 1.0

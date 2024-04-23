@@ -49,6 +49,8 @@ configs = XANESExperimentGuideConfig(
                                  'phi_r': None, #1e3,
                                  'phi_g': None, #1e-2,
                                  'phi_g2': None, #1e-4,
+                                 'beta': 0.999,
+                                 'gamma': 0.95,
                                  'addon_term_lower_bound': 3e-2,
                                  'debug': False},
     n_updates_create_acqf_weight_func=5,
