@@ -94,6 +94,12 @@ configs = XANESExperimentGuideConfig(
     )
 )
 
-experiment = SimulatedScanningExperiment(configs, 'YBCO3data', run_analysis=True)
+analyzer_configs = ExperimentAnalyzerConfig(
+    name='YBCO3data',
+    output_dir='outputs',
+    n_plot_interval=5
+)
+
+experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=20, n_target_measurements=50, n_plot_interval=5)
+experiment.run(n_initial_measurements=20, n_target_measurements=50)

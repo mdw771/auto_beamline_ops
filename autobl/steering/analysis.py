@@ -9,6 +9,7 @@ import gpytorch
 
 from autobl.util import *
 from autobl.steering.acquisition import *
+from autobl.steering.configs import *
 
 
 class Analyzer:
@@ -19,12 +20,13 @@ class Analyzer:
 
 class ScanningExperimentAnalyzer(Analyzer):
 
-    def __init__(self, guide, name, data_x, data_y, n_target_measurements=70, n_plot_interval=10,
-                 *args, **kwargs):
+    def __init__(self, configs: ExperimentAnalyzerConfig, guide, data_x, data_y,
+                 n_target_measurements=70, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.name = name
+        self.configs = configs
+        self.name = configs.name
         self.guide = guide
-        self.configs = guide.config
+        self.guide_configs = guide.config
         self.fig_conv, self.ax_conv = None, None
         self.n_measured_list = []
         self.metric_list = []
@@ -33,11 +35,11 @@ class ScanningExperimentAnalyzer(Analyzer):
         self.i_intermediate_plot = 0
         self.n_target_measurements = n_target_measurements
         self.n_pts_measured = 0
-        self.n_plot_interval = n_plot_interval
         self.data_x = data_x
         self.data_y = data_y
         self.enabled = True
 
+        self.build_dir()
         self.create_intermediate_figure()
         self.create_intermediate_data_dict()
         self.create_convergence_figure_and_data()
@@ -66,8 +68,13 @@ class ScanningExperimentAnalyzer(Analyzer):
         plt.show()
 
     @set_enabled
+    def build_dir(self):
+        if not os.path.exists(self.configs.output_dir):
+            os.makedirs(self.configs.output_dir)
+
+    @set_enabled
     def create_intermediate_figure(self):
-        n_plots = int(np.ceil(self.n_target_measurements / self.n_plot_interval))
+        n_plots = int(np.ceil(self.n_target_measurements / self.configs.n_plot_interval))
         n_cols = 3
         n_rows = int(np.ceil(n_plots / n_cols))
         self.fig_intermediate, self.ax_intermediate = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3),
@@ -75,7 +82,7 @@ class ScanningExperimentAnalyzer(Analyzer):
 
     @set_enabled
     def update_intermediate_figure(self):
-        if not self.n_pts_measured % self.n_plot_interval == 0:
+        if not self.n_pts_measured % self.configs.n_plot_interval == 0:
             return
         n_rows = len(self.ax_intermediate)
         n_cols = len(self.ax_intermediate[0])
@@ -90,7 +97,7 @@ class ScanningExperimentAnalyzer(Analyzer):
 
     @set_enabled
     def save_intermediate_figure(self):
-        self.fig_intermediate.savefig(os.path.join('outputs',
+        self.fig_intermediate.savefig(os.path.join(self.configs.output_dir,
                                                    self.get_save_name_prefix() + '_intermediate.pdf'),
                                       bbox_inches='tight')
 
@@ -117,7 +124,7 @@ class ScanningExperimentAnalyzer(Analyzer):
     def save_intermediate_data_dict(self):
         fname = self.get_save_name_prefix()
         fname = fname + '_intermediate_data.pkl'
-        fname = os.path.join('outputs', fname)
+        fname = os.path.join(self.configs.output_dir, fname)
         pickle.dump(self.intermediate_data_dict, open(fname, 'wb'))
 
     @set_enabled
@@ -140,16 +147,16 @@ class ScanningExperimentAnalyzer(Analyzer):
 
     @set_enabled
     def save_convergence_figure_and_data(self):
-        self.fig_conv.savefig(os.path.join('outputs', self.get_save_name_prefix() + '_conv.pdf'))
-        np.savetxt(os.path.join('outputs', self.get_save_name_prefix() + '_conv.txt'),
+        self.fig_conv.savefig(os.path.join(self.configs.output_dir, self.get_save_name_prefix() + '_conv.pdf'))
+        np.savetxt(os.path.join(self.configs.output_dir, self.get_save_name_prefix() + '_conv.txt'),
                    np.stack([self.n_measured_list, self.metric_list]))
 
     def get_save_name_prefix(self):
-        acquisition_info = self.configs.acquisition_function_class.__name__
-        if self.configs.acquisition_function_class in [GradientAwarePosteriorStandardDeviation,
+        acquisition_info = self.guide_configs.acquisition_function_class.__name__
+        if self.guide_configs.acquisition_function_class in [GradientAwarePosteriorStandardDeviation,
                                                        FittingResiduePosteriorStandardDeviation]:
             acquisition_info += '_phi_{}'.format(self.guide.acquisition_function.phi)
-        if self.configs.acquisition_function_class == ComprehensiveAugmentedAcquisitionFunction:
+        if self.guide_configs.acquisition_function_class == ComprehensiveAugmentedAcquisitionFunction:
             acquisition_info += '_gradOrder_{}_phiG_{}_phiR_{}'.format(self.guide.acquisition_function.gradient_order,
                                                                        self.guide.acquisition_function.phi_g,
                                                                        self.guide.acquisition_function.phi_r)
@@ -163,7 +170,7 @@ class ScanningExperimentAnalyzer(Analyzer):
         if isinstance(self.guide.model.covar_module, gpytorch.kernels.MaternKernel):
             kernel_info += '_nu_{}'.format(self.guide.model.covar_module.nu)
 
-        optimizer_info = self.configs.optimizer_class.__name__
+        optimizer_info = self.guide_configs.optimizer_class.__name__
 
         save_name_prefix = '_'.join([self.name, acquisition_info, kernel_info, optimizer_info])
         return save_name_prefix

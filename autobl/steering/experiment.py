@@ -25,22 +25,22 @@ class Experiment:
 
 class ScanningExperiment(Experiment):
 
-    def __init__(self, guide_configs, name, *args, **kwargs):
+    def __init__(self, guide_configs, *args, **kwargs):
         super().__init__()
         self.guide_confgis = guide_configs
-        self.name = name
         self.candidate_list = []
 
 
 class SimulatedScanningExperiment(ScanningExperiment):
 
-    def __init__(self, guide_configs, name, run_analysis=True, *args, **kwargs):
-        super().__init__(guide_configs, name, *args, **kwargs)
+    def __init__(self, guide_configs, run_analysis=True, analyzer_configs=None, *args, **kwargs):
+        super().__init__(guide_configs, *args, **kwargs)
         self.data_x = None
         self.data_y = None
         self.guide = None
         self.instrument = None
         self.analyzer = None
+        self.analyzer_configs = analyzer_configs
         self.n_pts_measured = 0
         self.run_analysis = run_analysis
 
@@ -56,9 +56,11 @@ class SimulatedScanningExperiment(ScanningExperiment):
         self.guide = autobl.steering.guide.XANESExperimentGuide(self.guide_confgis)
         self.guide.build(x_init, y_init)
 
-    def initialize_analyzer(self, n_plot_interval, n_target_measurements):
-        self.analyzer = ScanningExperimentAnalyzer(self.guide, self.name, self.data_x, self.data_y,
-                                                   n_target_measurements, n_plot_interval)
+    def initialize_analyzer(self, analyzer_configs, n_target_measurements):
+        if analyzer_configs is None:
+            analyzer_configs = ExperimentAnalyzerConfig()
+        self.analyzer = ScanningExperimentAnalyzer(analyzer_configs, self.guide, self.data_x, self.data_y,
+                                                   n_target_measurements=n_target_measurements)
         self.analyzer.enable(self.run_analysis)
 
     def take_initial_measurements(self, n):
@@ -70,10 +72,10 @@ class SimulatedScanningExperiment(ScanningExperiment):
     def update_candidate_list(self, candidates):
         self.candidate_list.append(candidates.squeeze().detach().cpu().numpy())
 
-    def run(self, n_initial_measurements=10, n_target_measurements=70, n_plot_interval=5):
+    def run(self, n_initial_measurements=10, n_target_measurements=70):
         x_init, y_init = self.take_initial_measurements(n_initial_measurements)
         self.initialize_guide(x_init, y_init)
-        self.initialize_analyzer(n_plot_interval, n_target_measurements)
+        self.initialize_analyzer(self.analyzer_configs, n_target_measurements)
         self.analyzer.increment_n_points_measured(n_initial_measurements)
         # self.analyzer.plot_data(additional_x=x_init, additional_y=y_init)
 

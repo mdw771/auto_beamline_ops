@@ -50,6 +50,19 @@ class StoppingCriterionConfig(Config):
 
 
 @dataclasses.dataclass
+class ExperimentAnalyzerConfig(Config):
+
+    name: str = 'Experiment'
+    """Name of the experiment."""
+
+    output_dir: str = 'outputs'
+    """Output directory of images and data."""
+
+    n_plot_interval: int = 5
+    """Generate intermediate plot after every this number of measurements."""
+
+
+@dataclasses.dataclass
 class ExperimentGuideConfig(Config):
 
     dim_measurement_space: int = None

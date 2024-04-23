@@ -57,7 +57,7 @@ def test_xanes_experiment_manager(generate_gold=False, debug=False):
         optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 20}}
     )
 
-    experiment = SimulatedScanningExperiment(configs, 'Sample1_50C_XANES', run_analysis=False)
+    experiment = SimulatedScanningExperiment(configs, run_analysis=False)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=10, n_target_measurements=70)
 

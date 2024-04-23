@@ -76,6 +76,12 @@ configs = XANESExperimentGuideConfig(
     )
 )
 
-experiment = SimulatedScanningExperiment(configs, 'Sample1_50C_XANES', run_analysis=True)
+analyzer_configs = ExperimentAnalyzerConfig(
+    name='Sample1_50C_XANES',
+    output_dir='outputs',
+    n_plot_interval=5
+)
+
+experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=10, n_target_measurements=70, n_plot_interval=5)
+experiment.run(n_initial_measurements=10, n_target_measurements=70)
