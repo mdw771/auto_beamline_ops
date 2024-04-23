@@ -29,6 +29,27 @@ class Config:
 
 
 @dataclasses.dataclass
+class StoppingCriterionConfig(Config):
+
+    method: str = 'max_uncertainty'
+    """
+    Method of early stopping determination. Can be:
+    - 'max_uncertainty': stops once max(acqf_weight_func * posterior_stdev) drops below a threshold.
+        Parameters:
+            - 'threshold': The threshold of max uncertainty.
+    """
+
+    params: Optional[dict] = dataclasses.field(default_factory=dict)
+    """Parameters of the chosen method."""
+
+    n_updates_to_begin: int = 10
+    """Start early stopping checks after this number of model updates have been done."""
+
+    n_check_interval: int = 5
+    """Check stopping criterion after every this number of model updates."""
+
+
+@dataclasses.dataclass
 class ExperimentGuideConfig(Config):
 
     dim_measurement_space: int = None
@@ -106,6 +127,10 @@ class GPExperimentGuideConfig(ExperimentGuideConfig):
     beta: float = 0.99
     """Decay factor of the weights of add-on terms in the acquisition function."""
 
+    stopping_criterion_configs: Optional[StoppingCriterionConfig] = None
+    """Early stopping criterion configurations."""
+
+
     def __post_init__(self):
         super().__post_init__()
         if 'input_transform' in self.model_params.keys():
@@ -136,3 +161,4 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
 
     acqf_weight_func_post_edge_width: float = 0.5
     """Width of post edge gain in acquisition weighting function as a multiple of edge width."""
+

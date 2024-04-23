@@ -76,4 +76,4 @@ if __name__ == '__main__':
     parser.add_argument('--generate-gold', action='store_true')
     args = parser.parse_args()
 
-    test_basic_gp(generate_gold=args.generate_gold, debug=True)
+    test_basic_gp(generate_gold=args.generate_gold, debug=~args.generate_gold)

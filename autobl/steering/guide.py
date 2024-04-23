@@ -17,6 +17,38 @@ from autobl.steering.acquisition import PosteriorStandardDeviationDerivedAcquisi
 from autobl.util import *
 
 
+class StoppingCriterion:
+
+    def __init__(self, configs: StoppingCriterionConfig, guide):
+        self.configs = configs
+        self.guide = guide
+
+    def check(self):
+        if self.configs is None:
+            return False
+        if self.guide.n_update_calls < self.configs.n_updates_to_begin:
+            return False
+        if (self.guide.n_update_calls - self.configs.n_updates_to_begin) % self.configs.n_check_interval != 0:
+            return False
+        if self.configs.method == 'max_uncertainty':
+            return self.check_max_uncertainty()
+
+    def check_max_uncertainty(self):
+        t = self.configs.params['threshold']
+        x = torch.linspace(0, 1, 100).view(-1, 1)
+        mu, sigma = self.guide.get_posterior_mean_and_std(x, transform=False, untransform=True)
+        if self.guide.acqf_weight_func is not None:
+            w = torch.clip(self.guide.acqf_weight_func(x).squeeze(), 0, 1)
+        else:
+            w = 1.0
+        max_sigma = (sigma * w).max()
+        if max_sigma < t:
+            logging.info('Stopping criterion triggered: max sigma {} < {}.'.format(max_sigma, t))
+            return True
+        else:
+            return False
+
+
 class ExperimentGuide:
 
     def __init__(self, config, *args, **kwargs):
@@ -46,6 +78,7 @@ class GPExperimentGuide(ExperimentGuide):
         self.outcome_transform = None
         self.n_suggest_calls = 0
         self.n_update_calls = 0
+        self.stopping_criterion = StoppingCriterion(self.config.stopping_criterion_configs, self)
 
     def build(self, x_train=None, y_train=None):
         """
@@ -334,7 +367,7 @@ class XANESExperimentGuide(GPExperimentGuide):
         peak_loc_normalized = float(peak_inds[0]) / len(x)
         peak_width_normalized = peak_properties['widths'][0] / len(x)
 
-        def mask_func(x):
+        def weight_func(x):
             m = sigmoid(x, r=20. / peak_width_normalized, d=peak_loc_normalized - 1.6 * peak_width_normalized)
             m = m + gaussian(x,
                              a=self.config.acqf_weight_func_post_edge_gain,
@@ -344,5 +377,5 @@ class XANESExperimentGuide(GPExperimentGuide):
             m = m * (1 - floor_value) + floor_value
             return m
 
-        self.acqf_weight_func = mask_func
+        self.acqf_weight_func = weight_func
         return

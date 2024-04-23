@@ -87,7 +87,11 @@ configs = XANESExperimentGuideConfig(
     optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 20}},
     n_updates_create_acqf_weight_func=5,
     acqf_weight_func_floor_value=0.01,
-    acqf_weight_func_post_edge_gain=3.0
+    acqf_weight_func_post_edge_gain=3.0,
+    stopping_criterion_configs=StoppingCriterionConfig(
+        method='max_uncertainty',
+        params={'threshold': 0.08}
+    )
 )
 
 experiment = SimulatedScanningExperiment(configs, 'YBCO3data', run_analysis=True)

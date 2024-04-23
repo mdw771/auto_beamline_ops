@@ -88,5 +88,7 @@ class SimulatedScanningExperiment(ScanningExperiment):
             self.n_pts_measured += len(candidates)
             self.analyzer.increment_n_points_measured(by=len(candidates))
             self.analyzer.update_analysis()
+            if self.guide.stopping_criterion.check():
+                break
 
         self.analyzer.save_analysis()

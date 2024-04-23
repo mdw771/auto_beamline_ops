@@ -69,7 +69,11 @@ configs = XANESExperimentGuideConfig(
     #                  }
     
     optimizer_class=TorchOptimizer,
-    optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 20}}
+    optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 20}},
+    stopping_criterion_configs=StoppingCriterionConfig(
+        method='max_uncertainty',
+        params={'threshold': 0.1}
+    )
 )
 
 experiment = SimulatedScanningExperiment(configs, 'Sample1_50C_XANES', run_analysis=True)
