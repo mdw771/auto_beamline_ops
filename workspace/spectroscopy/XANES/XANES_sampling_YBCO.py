@@ -67,7 +67,7 @@ configs = XANESExperimentGuideConfig(
                                  'phi_g': None, #2e-2,
                                  'phi_g2': None, #3e-4
                                  'beta': 0.999,
-                                 'gamma': 0.95,
+                                 'gamma': 0.99,
                                  'addon_term_lower_bound': 3e-2,
                                  'debug': False
                                  },
@@ -76,15 +76,15 @@ configs = XANESExperimentGuideConfig(
     # optimizer_params={'num_restarts': 2,}
     #                   #'options': {'maxiter': 2}}
 
-    # optimizer_class=DiscreteOptimizer,
-    # optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete,
-    #                   'optim_func_params': {
-    #                       'choices': torch.linspace(0, 1, len(energies))[:, None]
-    #                   }
-    #                  }
+    optimizer_class=DiscreteOptimizer,
+    optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete,
+                      'optim_func_params': {
+                          'choices': torch.linspace(0, 1, 1000)[:, None]
+                      }
+                     },
 
-    optimizer_class=TorchOptimizer,
-    optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 20}},
+    # optimizer_class=TorchOptimizer,
+    # optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 100}},
     n_updates_create_acqf_weight_func=5,
     acqf_weight_func_floor_value=0.01,
     acqf_weight_func_post_edge_gain=3.0,
@@ -96,4 +96,4 @@ configs = XANESExperimentGuideConfig(
 
 experiment = SimulatedScanningExperiment(configs, 'YBCO3data', run_analysis=True)
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=20, n_target_measurements=40, n_plot_interval=5)
+experiment.run(n_initial_measurements=20, n_target_measurements=50, n_plot_interval=5)

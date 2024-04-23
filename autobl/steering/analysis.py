@@ -82,7 +82,7 @@ class ScanningExperimentAnalyzer(Analyzer):
         self.guide.plot_posterior(
             self.data_x, ax=self.ax_intermediate[self.i_intermediate_plot // n_cols][self.i_intermediate_plot % n_cols])
         self.ax_intermediate[self.i_intermediate_plot // n_cols][self.i_intermediate_plot % n_cols].plot(
-            to_numpy(self.data_x), self.data_y, label='Truth', color='gray', alpha=0.6)
+            to_numpy(self.data_x), self.data_y, label='Truth', color='gray', alpha=0.6, linewidth=1)
         self.ax_intermediate[self.i_intermediate_plot // n_cols][self.i_intermediate_plot % n_cols].set_title(
             '{} points'.format(self.n_pts_measured))
         self.ax_intermediate[self.i_intermediate_plot // n_cols][self.i_intermediate_plot % n_cols].legend()

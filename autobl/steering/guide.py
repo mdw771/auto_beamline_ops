@@ -310,7 +310,7 @@ class GPExperimentGuide(ExperimentGuide):
             fig, ax = plt.subplots(1, 2, figsize=(9, 4))
         if not isinstance(ax, (list, tuple, np.ndarray)):
             ax = [ax]
-        ax[0].plot(x, mu, label='Posterior mean')
+        ax[0].plot(x, mu, label='Posterior mean', linewidth=0.5)
         ax[0].fill_between(x, mu - sigma, mu + sigma, alpha=0.5)
         data_x, data_y = self.untransform_data(self.data_x, self.data_y)
         ax[0].scatter(to_numpy(data_x.reshape(-1)), to_numpy(data_y.reshape(-1)), label='Measured data', s=4)

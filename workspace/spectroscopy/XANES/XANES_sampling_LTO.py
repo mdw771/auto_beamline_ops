@@ -61,15 +61,15 @@ configs = XANESExperimentGuideConfig(
     # optimizer_params={'num_restarts': 2,}
     #                   #'options': {'maxiter': 2}}
     
-    # optimizer_class=DiscreteOptimizer,
-    # optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete, 
-    #                   'optim_func_params': {
-    #                       'choices': torch.linspace(0, 1, len(energies))[:, None]
-    #                   }
-    #                  }
+    optimizer_class=DiscreteOptimizer,
+    optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete,
+                      'optim_func_params': {
+                          'choices': torch.linspace(0, 1, 1000)[:, None]
+                      }
+                     },
     
-    optimizer_class=TorchOptimizer,
-    optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 20}},
+    # optimizer_class=TorchOptimizer,
+    # optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 20}},
     stopping_criterion_configs=StoppingCriterionConfig(
         method='max_uncertainty',
         params={'threshold': 0.1}
