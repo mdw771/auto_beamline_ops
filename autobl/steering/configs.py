@@ -61,6 +61,9 @@ class ExperimentAnalyzerConfig(Config):
     n_plot_interval: int = 5
     """Generate intermediate plot after every this number of measurements."""
 
+    save: bool = True
+    """If True, analysis results will be saved to `output_dir`."""
+
 
 @dataclasses.dataclass
 class ExperimentGuideConfig(Config):
