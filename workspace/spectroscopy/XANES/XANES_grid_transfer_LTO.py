@@ -2,6 +2,7 @@ import os
 import glob
 import pickle
 import re
+import logging
 
 import matplotlib.pyplot as plt
 import matplotlib
@@ -25,16 +26,24 @@ set_random_seed(123)
 
 class LTOGridTransferTester:
 
-    def __init__(self, test_data_path, ref_spectra_data_path, output_dir='outputs'):
+    def __init__(self, test_data_path, ref_spectra_data_path, output_dir='outputs',
+                 grid_generation_method='init', grid_generation_spectra_indices=(0,), grid_intersect_tol=1.0,
+                 n_initial_measurements=10, n_target_measurements=40):
         self.test_data_path = test_data_path
         self.ref_spectra_data_path = ref_spectra_data_path
         self.test_data_all_spectra = None
         self.test_energies = None
+        self.ref_data_all_spectra = None
         self.ref_spectra_x = None
         self.ref_spectra_y = None
         self.output_dir = output_dir
         self.results = {'spectrum_index': [], 'rms': []}
         self.point_grid = None
+        self.grid_generation_method = grid_generation_method
+        self.grid_generation_spectra_indices = grid_generation_spectra_indices
+        self.grid_intersect_tol = grid_intersect_tol
+        self.n_initial_measurements = n_initial_measurements
+        self.n_target_measurements = n_target_measurements
         self.save_plots = True
         self.debug = False
         if not os.path.exists(self.output_dir):
@@ -50,9 +59,9 @@ class LTOGridTransferTester:
     def load_data(self):
         self.test_data_all_spectra, self.test_energies = self.load_data_from_csv(self.test_data_path)
 
-        ref_data_all_spectra, self.ref_spectra_x = self.load_data_from_csv(self.ref_spectra_data_path)
-        ref_spectra_0 = torch.tensor(ref_data_all_spectra[0])
-        ref_spectra_1 = torch.tensor(ref_data_all_spectra[-1])
+        self.ref_data_all_spectra, self.ref_spectra_x = self.load_data_from_csv(self.ref_spectra_data_path)
+        ref_spectra_0 = torch.tensor(self.ref_data_all_spectra[0])
+        ref_spectra_1 = torch.tensor(self.ref_data_all_spectra[-1])
         self.ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
 
         if self.save_plots:
@@ -79,6 +88,7 @@ class LTOGridTransferTester:
         ax.set_xlabel('Energy (eV)')
         ax.set_ylabel('Spectrum index')
         fig.savefig(os.path.join(self.output_dir, 'test_data.pdf'))
+
         plt.close(fig)
 
     def get_generic_config(self):
@@ -116,7 +126,7 @@ class LTOGridTransferTester:
         )
         return configs
 
-    def run_acquisition_for_spectrum_index(self, ind):
+    def run_acquisition_for_spectrum_index(self, ind, dataset='test'):
         configs = self.get_generic_config()
 
         analyzer_configs = ExperimentAnalyzerConfig(
@@ -126,13 +136,26 @@ class LTOGridTransferTester:
             save=self.save_plots
         )
 
-        data = self.test_data_all_spectra[ind]
+        if dataset == 'test':
+            data = self.test_data_all_spectra[ind]
+            energies = self.test_energies
+        elif dataset == 'ref':
+            data = self.ref_data_all_spectra[ind]
+            energies = self.ref_spectra_x
+        else:
+            raise ValueError
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(self.test_energies, data)
-        experiment.run(n_initial_measurements=10, n_target_measurements=40)
-        if self.save_plots:
-            interpolated_data = to_numpy(experiment.guide.get_posterior_mean_and_std(self.test_energies)[0].squeeze())
-            self.save_spectrum_estimate_plot_and_data(ind, to_numpy(self.test_energies.squeeze()), interpolated_data)
+        experiment.run(n_initial_measurements=self.n_initial_measurements,
+                       n_target_measurements=self.n_target_measurements)
+        if self.save_plots and dataset == 'test':
+            x_measured, y_measured = experiment.guide.untransform_data(x=experiment.guide.data_x,
+                                                                       y=experiment.guide.data_y)
+            x_measured, y_measured = to_numpy(x_measured.squeeze()), to_numpy(y_measured.squeeze())
+            interpolated_data = to_numpy(experiment.guide.get_posterior_mean_and_std(energies)[0].squeeze())
+            self.save_spectrum_estimate_plot_and_data(ind, to_numpy(energies.squeeze()), interpolated_data,
+                                                      x_measured=x_measured,
+                                                      y_measured=y_measured)
         return experiment
 
     def get_gp_interpolation_for_spectrum_index(self, ind):
@@ -143,14 +166,18 @@ class LTOGridTransferTester:
         interpolated_data = self.get_gp_interpolation(self.point_grid, data_y)
         interpolated_data = to_numpy(interpolated_data.squeeze())
         if self.save_plots:
-            self.save_spectrum_estimate_plot_and_data(ind, to_numpy(self.test_energies.squeeze()), interpolated_data)
+            self.save_spectrum_estimate_plot_and_data(ind, to_numpy(self.test_energies.squeeze()), interpolated_data,
+                                                      x_measured=to_numpy(self.point_grid.squeeze()),
+                                                      y_measured=to_numpy(data_y.squeeze()))
         return interpolated_data
 
-    def save_spectrum_estimate_plot_and_data(self, ind, energies, estimated_data):
+    def save_spectrum_estimate_plot_and_data(self, ind, energies, estimated_data, x_measured=None, y_measured=None):
         fig, ax = plt.subplots(1, 1)
         ax.plot(to_numpy(self.test_energies.squeeze()), estimated_data, label='Estimated spectrum')
         ax.plot(to_numpy(self.test_energies.squeeze()), self.test_data_all_spectra[ind], color='gray',
                 linestyle='--', label='Actual spectrum')
+        if x_measured is not None and y_measured is not None:
+            ax.scatter(x_measured, y_measured, s=3)
         ax.legend()
         fig.savefig(os.path.join(self.output_dir, 'estimated_data_ind_{}.pdf'.format(ind)))
         plt.close(fig)
@@ -158,9 +185,16 @@ class LTOGridTransferTester:
         df = pd.DataFrame(data={
             'energy': energies,
             'estimated_data': estimated_data,
-            'true_data': self.test_data_all_spectra[ind]
+            'true_data': self.test_data_all_spectra[ind],
         })
         df.to_csv(os.path.join(self.output_dir, 'estimated_data_ind_{}.csv'.format(ind)), index=False)
+
+        if x_measured is not None and y_measured is not None:
+            df = pd.DataFrame(data={
+                'x_measured': x_measured,
+                'y_measured': y_measured,
+            })
+            df.to_csv(os.path.join(self.output_dir, 'measured_data_ind_{}.csv'.format(ind)), index=False)
 
     def get_gp_interpolation(self, data_x, data_y):
         configs = self.get_generic_config()
@@ -174,9 +208,35 @@ class LTOGridTransferTester:
         return mu
 
     def build_point_grid(self):
-        experiment = self.run_acquisition_for_spectrum_index(0)
-        self.point_grid, _ = experiment.guide.untransform_data(x=experiment.guide.data_x)
-        self.point_grid = torch.sort(self.point_grid, dim=0).values
+        if self.grid_generation_method == 'init':
+            experiment = self.run_acquisition_for_spectrum_index(0)
+            self.point_grid, _ = experiment.guide.untransform_data(x=experiment.guide.data_x)
+            self.point_grid = torch.sort(self.point_grid, dim=0).values
+        elif self.grid_generation_method == 'ref':
+            ref_points = []
+            for ref_ind in self.grid_generation_spectra_indices:
+                experiment = self.run_acquisition_for_spectrum_index(ref_ind, dataset='ref')
+                point_grid = to_numpy(experiment.guide.untransform_data(x=experiment.guide.data_x)[0].squeeze())
+                ref_points.append(point_grid)
+            intersect_point_grid = self.find_intersects_with_tolerance_multi_arrays(ref_points,
+                                                                                    tol=self.grid_intersect_tol)
+            logging.info('Numbers of points from all reference spectra: {}'.format([len(x) for x in ref_points]))
+            logging.info('The merged grid has {} points.'.format(len(intersect_point_grid)))
+            self.point_grid = torch.tensor(intersect_point_grid.reshape(-1, 1))
+        else:
+            raise ValueError('{} is invalid.'.format(self.grid_generation_method))
+
+    @staticmethod
+    def find_intersects_with_tolerance(arr1, arr2, tol=1.0):
+        dist = np.abs(arr1.reshape(-1, 1) - arr2)
+        ind_in_1, _ = np.where(dist < tol)
+        return arr1[ind_in_1]
+
+    def find_intersects_with_tolerance_multi_arrays(self, arrs, tol=1.0):
+        intersect = arrs[0]
+        for arr in arrs[1:]:
+            intersect = self.find_intersects_with_tolerance(intersect, arr, tol=tol)
+        return intersect
 
     def log_data(self, ind, rms):
         self.results['spectrum_index'].append(ind)
@@ -187,25 +247,18 @@ class LTOGridTransferTester:
 
     def run(self):
         self.build_point_grid()
-        for ind in range(1, len(self.test_data_all_spectra)):
+        for ind in range(len(self.test_data_all_spectra)):
             data_interp = self.get_gp_interpolation_for_spectrum_index(ind)
             metric_val = rms(data_interp, self.test_data_all_spectra[ind])
             self.log_data(ind, metric_val)
 
     def post_analyze(self):
-        plt.savefig(os.path.join(self.output_dir, 'rms_all_test_spectra.pdf'))
+        self.analyze_rms()
         self.analyze_phase_transition_percentages()
 
     def analyze_rms(self):
-        fig, ax = plt.subplots(1, 1)
-        ax.plot(self.results['spectrum_index'], self.results['rms'])
-        ax.set_xlabel('Spectrum')
-        ax.set_ylabel('RMS')
-
-    def analyze_phase_transition_percentages(self):
         indices = []
-        percentages_estimated = []
-        percentages_true = []
+        rms_list = []
         flist = glob.glob(os.path.join(self.output_dir, 'estimated_data_ind_*.csv'))
         flist = np.array(flist)[np.argsort([int(re.findall('\d+', x)[-1]) for x in flist])]
         for f in flist:
@@ -214,22 +267,54 @@ class LTOGridTransferTester:
             table = pd.read_csv(f, index_col=None)
             estimated_spectrum = table['estimated_data'].to_numpy()
             true_spectrum = table['true_data'].to_numpy()
-            p_estimated = self.get_phase_transition_percentage(estimated_spectrum)
+            metric_val = rms(estimated_spectrum, true_spectrum)
+            rms_list.append(metric_val)
+
+        fig, ax = plt.subplots(1, 1)
+        ax.plot(indices, rms_list)
+        ax.set_xlabel('Spectrum')
+        ax.set_ylabel('RMS')
+        plt.savefig(os.path.join(self.output_dir, 'rms_all_test_spectra.pdf'))
+
+    def analyze_phase_transition_percentages(self):
+        indices = []
+        percentages_estimated = []
+        percentages_true = []
+        fitting_residue_estimated = []
+        flist = glob.glob(os.path.join(self.output_dir, 'estimated_data_ind_*.csv'))
+        flist = np.array(flist)[np.argsort([int(re.findall('\d+', x)[-1]) for x in flist])]
+        for f in flist:
+            ind = int(re.findall('\d+', f)[-1])
+            indices.append(ind)
+            table = pd.read_csv(f, index_col=None)
+            estimated_spectrum = table['estimated_data'].to_numpy()
+            true_spectrum = table['true_data'].to_numpy()
+            p_estimated, r = self.get_phase_transition_percentage(estimated_spectrum, return_fitting_residue=True)
             percentages_estimated.append(p_estimated)
+            fitting_residue_estimated.append(r)
             p_true = self.get_phase_transition_percentage(true_spectrum)
             percentages_true.append(p_true)
+
         fig, ax = plt.subplots(1, 1)
         ax.plot(indices, percentages_estimated, label='Estimated')
         ax.plot(indices, percentages_true, label='True')
         ax.legend()
         fig.savefig(os.path.join(self.output_dir, 'phase_transition_percentages.pdf'))
 
-    def get_phase_transition_percentage(self, data):
-        amat = self.ref_spectra_y.T
+        fig, ax = plt.subplots(1, 1)
+        ax.plot(indices, fitting_residue_estimated)
+        fig.savefig(os.path.join(self.output_dir, 'fitting_residue.pdf'))
+
+    def get_phase_transition_percentage(self, data, return_fitting_residue=False):
+        amat = to_numpy(self.ref_spectra_y.T)
         bvec = data.reshape(-1, 1)
         xvec = np.matmul(np.linalg.pinv(amat), bvec)
         w = xvec.reshape(-1)
         p = w[-1] / np.sum(w)
+        if return_fitting_residue:
+            y_fit = (amat @ xvec).reshape(-1)
+            residue = np.mean((y_fit - data) ** 2)
+            return p, residue
         return p
 
 
@@ -237,7 +322,9 @@ if __name__ == '__main__':
     tester = LTOGridTransferTester(
         test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
         ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_initOfSelf/Sample1_50C'
+        output_dir='outputs/grid_transfer/grid_initOfSelf/Sample1_50C',
+        grid_generation_method='init',
+        n_initial_measurements=10, n_target_measurements=40
     )
     tester.build()
     tester.run()
@@ -246,7 +333,35 @@ if __name__ == '__main__':
     tester = LTOGridTransferTester(
         test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
         ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_initOfSelf/Sample2_60C'
+        output_dir='outputs/grid_transfer/grid_initOfSelf/Sample2_60C',
+        grid_generation_method='init',
+        n_initial_measurements=10, n_target_measurements=40
+    )
+    tester.build()
+    tester.run()
+    tester.post_analyze()
+
+    tester = LTOGridTransferTester(
+        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
+        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
+        output_dir='outputs/grid_transfer/grid_selectedRef/Sample1_50C',
+        grid_generation_method='ref',
+        grid_generation_spectra_indices=(0, 5, 8, 12),
+        grid_intersect_tol=1.0,
+        n_initial_measurements=10, n_target_measurements=40
+    )
+    tester.build()
+    tester.run()
+    tester.post_analyze()
+
+    tester = LTOGridTransferTester(
+        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
+        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
+        output_dir='outputs/grid_transfer/grid_selectedRef/Sample2_60C',
+        grid_generation_method='ref',
+        grid_generation_spectra_indices=(0, 5, 8, 12),
+        grid_intersect_tol=1.0,
+        n_initial_measurements=10, n_target_measurements=40
     )
     tester.build()
     tester.run()
