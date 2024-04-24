@@ -59,7 +59,7 @@ def test_xanes_experiment_manager(generate_gold=False, debug=False):
 
     experiment = SimulatedScanningExperiment(configs, run_analysis=False)
     experiment.build(energies, data)
-    experiment.run(n_initial_measurements=10, n_target_measurements=70)
+    experiment.run(n_initial_measurements=10, n_target_measurements=80)
 
     # CI
     candidate_list = np.stack(experiment.candidate_list)

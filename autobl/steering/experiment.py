@@ -80,9 +80,9 @@ class SimulatedScanningExperiment(ScanningExperiment):
         # self.analyzer.plot_data(additional_x=x_init, additional_y=y_init)
 
         if n_target_measurements is None:
-            n_target_measurements = len(self.data_x) - n_initial_measurements
+            n_target_measurements = len(self.data_x)
 
-        for i in tqdm.trange(n_target_measurements):
+        for i in tqdm.trange(n_initial_measurements, n_target_measurements):
             candidates = self.guide.suggest().double()
             self.update_candidate_list(candidates)
             y_new = self.instrument.measure(candidates).unsqueeze(-1)
