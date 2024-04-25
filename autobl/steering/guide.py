@@ -336,7 +336,8 @@ class XANESExperimentGuide(GPExperimentGuide):
                 self.n_update_calls == self.config.n_updates_create_acqf_weight_func:
             logging.info('Building acquisition function mask with floor value {}.'.format(self.config.acqf_weight_func_floor_value))
             self.build_acqf_weight_function(floor_value=self.config.acqf_weight_func_floor_value)
-            self.acquisition_function.set_weight_func(self.acqf_weight_func)
+            if hasattr(self.acquisition_function, 'set_weight_func'):
+                self.acquisition_function.set_weight_func(self.acqf_weight_func)
 
     def build_acquisition_function(self):
         super().build_acquisition_function()
