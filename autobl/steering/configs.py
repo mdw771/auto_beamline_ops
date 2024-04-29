@@ -5,6 +5,7 @@ import json
 
 import botorch
 import gpytorch
+import numpy as np
 
 from autobl.steering.optimization import Optimizer, ContinuousOptimizer
 
@@ -178,3 +179,108 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
     acqf_weight_func_post_edge_width: float = 0.5
     """Width of post edge gain in acquisition weighting function as a multiple of edge width."""
 
+
+@dataclasses.dataclass
+class SampleParams(Config):
+    pass
+
+
+@dataclasses.dataclass
+class SpatialSampleParams(SampleParams):
+
+    image: np.ndarray = None
+    """Sample image."""
+
+    psize_nm: float = 0.0
+    """Pixel size in nm."""
+
+
+@dataclasses.dataclass
+class ExperimentSetupParams(Config):
+    pass
+
+
+@dataclasses.dataclass
+class FlyScanExperimentSetupParams(ExperimentSetupParams):
+
+    psize_nm: float = 0.0
+    """Pixel size in nm."""
+
+    scan_speed_nm_sec: float = 1.0
+    """Probe speed in nm/sec."""
+
+    exposure_sec: float = 0.9
+    """The time that the sample is exposured per measurement."""
+
+    deadtime_sec: float = 1.0
+    """The time that the detectror is inactive and therefore not collecting data between measurements."""
+
+    probe: Optional[np.ndarray] = None
+    """
+    The probe function. If None, it will be assumed to be a delta function. Otherwise, it should be a 2D array 
+    containing the probe that has the same pixel size as the sample image.
+    """
+
+    @property
+    def exposure_length_nm(self):
+        return self.exposure_sec * self.scan_speed_nm_sec
+
+    @property
+    def exposure_length_pixel(self):
+        return self.exposure_length_nm / self.psize_nm
+
+    @property
+    def dead_length_nm(self):
+        return self.deadtime_sec * self.scan_speed_nm_sec
+
+    @property
+    def dead_length_pixel(self):
+        return self.dead_length_nm / self.psize_nm
+
+
+@dataclasses.dataclass
+class SimulationConfig(Config):
+
+    sample_params: SampleParams = None
+    """Sample parameters."""
+
+    setup_params: ExperimentSetupParams = None
+    """Setup parameters."""
+
+    eps: float = 1e-6
+    """Machine precision tolerance."""
+
+
+@dataclasses.dataclass
+class FlyScanSimulationConfig(SimulationConfig):
+
+    sample_params: SpatialSampleParams = None
+    """Sample parameters."""
+
+    setup_params: FlyScanExperimentSetupParams = None
+    """Setup parameters."""
+
+    num_pts_for_integration_per_measurement: Optional[int] = None
+    """
+    The number of points whose values are to be integrated to yield the fly scan measurement. 
+    Only used for simulation. Either this or `step_size_for_integration_nm` must be given.
+    """
+
+    step_size_for_integration_nm: Optional[float] = None
+    """
+    The separation between points integrated to estimate the measured intensity in a fly-scan measurement. 
+    Either this or `num_pts_for_integration_per_measurement` must be given.
+    """
+
+    def __post_init__(self):
+        if self.num_pts_for_integration_per_measurement is not None and self.step_size_for_integration_nm is not None:
+            raise ValueError('Only one of "step_size_for_integration_nm" and "num_pts_for_integration_per_measurement" '
+                             'should be given.')
+
+    @property
+    def step_size_for_integration_pixel(self):
+        if self.step_size_for_integration_nm:
+            return self.step_size_for_integration_nm / self.setup_params.psize_nm
+        else:
+            assert self.num_pts_for_integration_per_measurement is not None
+            return self.setup_params.exposure_length_pixel / self.num_pts_for_integration_per_measurement
