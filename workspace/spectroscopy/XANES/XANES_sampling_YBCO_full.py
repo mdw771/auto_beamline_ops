@@ -36,6 +36,7 @@ data = data_all_spectra['YBCO_epararb.0001'].to_numpy()
 ref_spectra_0 = torch.tensor(data_all_spectra['YBCO_epara.0001'].to_numpy())
 ref_spectra_1 = torch.tensor(data_all_spectra['YBCO_eparc.0001'].to_numpy())
 energies = data_all_spectra['energy'].to_numpy()
+print('Energy range = {} eV'.format(energies[-1] - energies[0]))
 energies = torch.tensor(energies)
 y_fit = linear_fit([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)], data)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
@@ -55,7 +56,7 @@ configs = XANESExperimentGuideConfig(
     model_class=botorch.models.SingleTaskGP,
     model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
     noise_variance=1e-6,
-    override_kernel_lengthscale=7,
+    override_kernel_lengthscale=10,
     lower_bounds=torch.tensor([energies[0]]),
     upper_bounds=torch.tensor([energies[-1]]),
     acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
@@ -79,7 +80,7 @@ configs = XANESExperimentGuideConfig(
     optimizer_class=DiscreteOptimizer,
     optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete,
                       'optim_func_params': {
-                          'choices': torch.linspace(0, 1, 1000)[:, None]
+                          'choices': torch.linspace(0, 1, 5000)[:, None]
                       }
                      },
 
@@ -95,11 +96,11 @@ configs = XANESExperimentGuideConfig(
 )
 
 analyzer_configs = ExperimentAnalyzerConfig(
-    name='YBCO3data',
+    name='YBCO3dataFull',
     output_dir='outputs',
     n_plot_interval=5
 )
 
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=200, n_target_measurements=270)
+experiment.run(n_initial_measurements=140, n_target_measurements=270)

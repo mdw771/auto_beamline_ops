@@ -35,8 +35,9 @@ class StoppingCriterion:
 
     def check_max_uncertainty(self):
         t = self.configs.params['threshold']
-        x = torch.linspace(0, 1, 100).view(-1, 1)
+        x = torch.linspace(0, 1, self.guide.data_x.shape[0] * 5).view(-1, 1)
         mu, sigma = self.guide.get_posterior_mean_and_std(x, transform=False, untransform=True)
+        sigma = sigma.squeeze()
         if self.guide.acqf_weight_func is not None:
             w = torch.clip(self.guide.acqf_weight_func(x).squeeze(), 0, 1)
         else:
@@ -353,7 +354,7 @@ class XANESExperimentGuide(GPExperimentGuide):
             logging.warning('Acquisition function does not have attribute "set_weight_func".')
             self.acqf_weight_func = None
             return
-        x = torch.linspace(0, 1, 100).reshape(-1, 1)
+        x = torch.linspace(0, 1, self.data_x.shape[0] * 10).reshape(-1, 1)
         mu, _ = self.get_posterior_mean_and_std(x, transform=False)
         mu = mu.squeeze()
         # convert 3 eV to pixel
@@ -364,10 +365,11 @@ class XANESExperimentGuide(GPExperimentGuide):
 
         # convert 3 eV to pixel
         min_peak_width = float(3.0 / (self.input_transform.bounds[1][0] - self.input_transform.bounds[0][0]) * len(x))
-        peak_inds, peak_properties = scipy.signal.find_peaks(mu_grad, height=0.05, width=min_peak_width)
+        peak_locs, peak_properties = scipy.signal.find_peaks(mu_grad, height=0.05, width=min_peak_width)
+        max_peak_ind = np.argmax(peak_properties['peak_heights'])
 
-        peak_loc_normalized = float(peak_inds[0]) / len(x)
-        peak_width_normalized = peak_properties['widths'][0] / len(x)
+        peak_loc_normalized = float(peak_locs[max_peak_ind]) / len(x)
+        peak_width_normalized = peak_properties['widths'][max_peak_ind] / len(x)
 
         def weight_func(x):
             m = sigmoid(x, r=20. / peak_width_normalized, d=peak_loc_normalized - 1.6 * peak_width_normalized)

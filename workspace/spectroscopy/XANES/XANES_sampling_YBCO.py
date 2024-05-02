@@ -90,7 +90,7 @@ configs = XANESExperimentGuideConfig(
     acqf_weight_func_post_edge_gain=3.0,
     stopping_criterion_configs=StoppingCriterionConfig(
         method='max_uncertainty',
-        params={'threshold': 0.08}
+        params={'threshold': 0.05}
     )
 )
 
