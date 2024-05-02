@@ -56,11 +56,12 @@ class SimulatedScanningExperiment(ScanningExperiment):
         self.guide = autobl.steering.guide.XANESExperimentGuide(self.guide_confgis)
         self.guide.build(x_init, y_init)
 
-    def initialize_analyzer(self, analyzer_configs, n_target_measurements):
+    def initialize_analyzer(self, analyzer_configs, n_target_measurements, n_initial_measurements):
         if analyzer_configs is None:
             analyzer_configs = ExperimentAnalyzerConfig()
         self.analyzer = ScanningExperimentAnalyzer(analyzer_configs, self.guide, self.data_x, self.data_y,
-                                                   n_target_measurements=n_target_measurements)
+                                                   n_target_measurements=n_target_measurements,
+                                                   n_init_measurements=n_initial_measurements)
         self.analyzer.enable(self.run_analysis)
 
     def take_initial_measurements(self, n):
@@ -75,13 +76,12 @@ class SimulatedScanningExperiment(ScanningExperiment):
     def run(self, n_initial_measurements=10, n_target_measurements=70):
         x_init, y_init = self.take_initial_measurements(n_initial_measurements)
         self.initialize_guide(x_init, y_init)
-        self.initialize_analyzer(self.analyzer_configs, n_target_measurements)
+        self.initialize_analyzer(self.analyzer_configs, n_target_measurements, n_initial_measurements)
         self.analyzer.increment_n_points_measured(n_initial_measurements)
         # self.analyzer.plot_data(additional_x=x_init, additional_y=y_init)
 
         if n_target_measurements is None:
             n_target_measurements = len(self.data_x)
-
         for i in tqdm.trange(n_initial_measurements, n_target_measurements):
             candidates = self.guide.suggest().double()
             self.update_candidate_list(candidates)

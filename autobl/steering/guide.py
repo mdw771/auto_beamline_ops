@@ -359,7 +359,8 @@ class XANESExperimentGuide(GPExperimentGuide):
         # convert 3 eV to pixel
         gaussian_grad_sigma = 3.0 / (self.input_transform.bounds[1][0] - self.input_transform.bounds[0][0]) * len(x)
         gaussian_grad_sigma = float(gaussian_grad_sigma)
-        mu_grad = scipy.ndimage.gaussian_filter(to_numpy(mu), sigma=gaussian_grad_sigma, order=1)
+        mu = scipy.ndimage.gaussian_filter(to_numpy(mu), sigma=gaussian_grad_sigma)
+        mu_grad = scipy.signal.convolve(np.pad(mu, [1, 1], mode='edge'), [0.5, 0, -0.5], mode='valid')
 
         # convert 3 eV to pixel
         min_peak_width = float(3.0 / (self.input_transform.bounds[1][0] - self.input_transform.bounds[0][0]) * len(x))

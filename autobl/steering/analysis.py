@@ -21,7 +21,7 @@ class Analyzer:
 class ScanningExperimentAnalyzer(Analyzer):
 
     def __init__(self, configs: ExperimentAnalyzerConfig, guide, data_x, data_y,
-                 n_target_measurements=70, *args, **kwargs):
+                 n_target_measurements=70, n_init_measurements=10, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.configs = configs
         self.name = configs.name
@@ -34,6 +34,7 @@ class ScanningExperimentAnalyzer(Analyzer):
         self.intermediate_data_dict = {}
         self.i_intermediate_plot = 0
         self.n_target_measurements = n_target_measurements
+        self.n_init_measurements = n_init_measurements
         self.n_pts_measured = 0
         self.data_x = data_x
         self.data_y = data_y
@@ -74,7 +75,7 @@ class ScanningExperimentAnalyzer(Analyzer):
 
     @set_enabled
     def create_intermediate_figure(self):
-        n_plots = int(np.ceil(self.n_target_measurements / self.configs.n_plot_interval))
+        n_plots = int(np.ceil((self.n_target_measurements - self.n_init_measurements) / self.configs.n_plot_interval))
         n_cols = 3
         n_rows = int(np.ceil(n_plots / n_cols))
         self.fig_intermediate, self.ax_intermediate = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3),
