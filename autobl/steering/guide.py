@@ -425,8 +425,9 @@ class XANESExperimentGuide(GPExperimentGuide):
         def sparseness_function(x):
             # A basin function that looks like this: ```\___/```
             lower_bound = self.config.project_func_sparseness_lower_bound
-            s = (sigmoid(x, r=1 / peak_width, d=peak_loc - peak_width * 5) +
-                 sigmoid(x, r=-1 / peak_width, d=peak_loc + peak_width * 50))
+            plateau_bounds = self.config.project_func_sparseness_plateau_bounds
+            s = (sigmoid(x, r=1 / peak_width, d=peak_loc + peak_width * plateau_bounds[0]) +
+                 sigmoid(x, r=-1 / peak_width, d=peak_loc + peak_width * plateau_bounds[1]))
             s = (s - 1.0) * (1.0 - lower_bound) + lower_bound
             return s
 
@@ -443,5 +444,14 @@ class XANESExperimentGuide(GPExperimentGuide):
             x_n = mapper(x_n)
             x = torch.tensor(x_n, device=x.device)
             return x
+
+        if self.config.debug:
+            fig, ax = plt.subplots(1, 1)
+            ax.scatter(x_dat, self.untransform_data(x=None, y=y_dat)[1], color='gray', label='Initial data')
+            ax.plot(x_dense, sparseness, label='Sparseness')
+            ax.plot(x_dense, mapper(x_dense), label='Mapping')
+            ax.legend()
+            plt.show()
+
 
         self.feature_projection_func = projection_func

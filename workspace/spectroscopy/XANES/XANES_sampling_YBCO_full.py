@@ -97,6 +97,10 @@ configs = XANESExperimentGuideConfig(
     #     method='max_uncertainty',
     #     params={'threshold': 0.01}
     # )
+
+    project_func_sparseness_lower_bound=0.5,
+    project_func_sparseness_plateau_bounds=(-5, 50),
+    debug=True
 )
 
 analyzer_configs = ExperimentAnalyzerConfig(

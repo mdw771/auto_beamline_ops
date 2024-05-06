@@ -1,6 +1,6 @@
 import dataclasses
 from collections.abc import Sequence, Callable
-from typing import Type, Optional, Any
+from typing import Type, Optional, Any, Tuple
 import json
 
 import botorch
@@ -84,6 +84,8 @@ class ExperimentGuideConfig(Config):
     must be 1; to get multiple candidates, either use Monte-Carlo-based acquisition functions (e.g., 
     those whose names start with "q" like `qUpperConfidenceBound`), or define a custom acquisition function.
     """
+
+    debug: bool = False
 
     def __post_init__(self):
         if self.dim_measurement_space is None:
@@ -184,8 +186,19 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
     Lower bound of the sparseness function used to calculate input feature projection mapping. A lower value means
     points in flat regions before and after the absorption edge are mapped more densely, which reduces their
     covariance distance and leads to smoother posterior mean in those regions. The input value should be between 0
-    and 1. This parameter is only used when model is ProjectedSpaceSingleTaskGP.
+    and 1. 
+    This parameter is only used when model is ProjectedSpaceSingleTaskGP.
     """
+
+    project_func_sparseness_plateau_bounds: Tuple[float, float] = (-5, 50)
+    """
+    Lower and upper bounds of the sparseness function's plateau used in feature projection. The actual bounds are
+    peak_location -/+ project_func_sparseness_plateu_bounds[0/1] * peak_width, where peak_location and peak_width
+    are automatically detected by the algorithm. Ideally, the bound should exactly include the region with fast
+    variation (i.e., those requiring a smaller lengthscale). 
+    This parameter is only used when model is ProjectedSpaceSingleTaskGP.
+    """
+
 
 
 
