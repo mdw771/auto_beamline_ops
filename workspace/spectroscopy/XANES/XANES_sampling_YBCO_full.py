@@ -76,20 +76,12 @@ configs = XANESExperimentGuideConfig(
                                  'addon_term_lower_bound': 3e-2,
                                  'debug': False
                                  },
-
-    # optimizer_class=ContinuousOptimizer,
-    # optimizer_params={'num_restarts': 2,}
-    #                   #'options': {'maxiter': 2}}
-
     optimizer_class=DiscreteOptimizer,
     optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete,
                       'optim_func_params': {
                           'choices': torch.linspace(0, 1, 5000)[:, None]
                       }
                      },
-
-    # optimizer_class=TorchOptimizer,
-    # optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 100}},
     n_updates_create_acqf_weight_func=5,
     acqf_weight_func_floor_value=0.01,
     acqf_weight_func_post_edge_gain=3.0,
@@ -97,10 +89,10 @@ configs = XANESExperimentGuideConfig(
     #     method='max_uncertainty',
     #     params={'threshold': 0.01}
     # )
-
     project_func_sparseness_lower_bound=0.5,
     project_func_sparseness_plateau_bounds=(-5, 50),
-    debug=True
+    use_spline_interpolation_for_posterior_mean=True,
+    debug=False
 )
 
 analyzer_configs = ExperimentAnalyzerConfig(

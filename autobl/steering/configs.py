@@ -202,8 +202,12 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
     This parameter is only used when model is ProjectedSpaceSingleTaskGP.
     """
 
-
-
+    use_spline_interpolation_for_posterior_mean: bool = False
+    """
+    When True, posterior mean will be estimated using the cubic spline interpolation of past measurements instead
+    of being calculated using Gaussian process. This could avoid oscillation that occurs in flat regions when 
+    the lengthscale is too small.
+    """
 
 
 @dataclasses.dataclass

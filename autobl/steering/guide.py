@@ -279,7 +279,7 @@ class GPExperimentGuide(ExperimentGuide):
                 self.config.override_kernel_lengthscale,
                 self.scale_by_normalizer_bounds(self.config.override_kernel_lengthscale)))
 
-    def get_posterior_mean_and_std(self, x, transform=True, untransform=True):
+    def get_posterior_mean_and_std(self, x, transform=True, untransform=True, **kwargs):
         if transform:
             x_transformed, _ = self.transform_data(x, None, train=False)
         else:
@@ -368,6 +368,44 @@ class XANESExperimentGuide(GPExperimentGuide):
         if hasattr(self.acquisition_function, 'set_weight_func'):
             self.acquisition_function.set_weight_func(self.acqf_weight_func)
 
+    def get_posterior_mean_and_std(self, x, transform=True, untransform=True, use_spline_interpolation_for_mean=None):
+        """
+        Get posterior mean and standard deviation.
+
+        :param x: Tensor.
+        :param transform: bool. If True, input data are normalized.
+        :param untransform: bool. If True, posterior data are unnormalized/unstandardized before returned.
+        :param use_spline_interpolation_for_mean: Option[bool]. If True, spline interpolation is used to estimate
+            the posterior mean; if false, the posterior mean will be calculated exactly using the Gaussian model.
+            If None, it will be determined by config setting.
+        :return: Tensor, Tensor.
+        """
+        if use_spline_interpolation_for_mean is None:
+            use_spline_interpolation_for_mean = self.config.use_spline_interpolation_for_posterior_mean
+        if not use_spline_interpolation_for_mean:
+            return super().get_posterior_mean_and_std(x, transform=transform, untransform=untransform)
+        _, sigma = super().get_posterior_mean_and_std(x, transform=transform, untransform=untransform)
+        if transform:
+            x_transformed, _ = self.transform_data(x, None, train=False)
+        else:
+            x_transformed = x
+        mu = self.get_estimated_data_by_interpolation(x_transformed)
+        if untransform:
+            _, mu = self.untransform_data(x=None, y=mu)
+        return mu, sigma
+
+    def get_estimated_data_by_interpolation(self, x):
+        x_dat = to_numpy(self.data_x.squeeze())
+        y_dat = to_numpy(self.data_y.squeeze())
+        sorted_inds = np.argsort(x_dat)
+        x_dat = x_dat[sorted_inds]
+        y_dat = y_dat[sorted_inds]
+        x_interp = to_numpy(x.squeeze())
+        interpolator = scipy.interpolate.CubicSpline(x_dat, y_dat, extrapolate=True)
+        y_interp = interpolator(x_interp)
+        y = torch.tensor(y_interp.reshape(-1, 1), device=x.device)
+        return y
+
     def build_acqf_weight_function(self, floor_value=0.1):
         """
         Create and set a mask function to the acquisition function, such that it lowers the values in pre-edge
@@ -396,11 +434,12 @@ class XANESExperimentGuide(GPExperimentGuide):
 
         def weight_func(x):
             m = sigmoid(x, r=20. / peak_width_normalized, d=peak_loc_normalized - 1.6 * peak_width_normalized)
-            m = m + gaussian(x,
-                             a=self.config.acqf_weight_func_post_edge_gain,
-                             mu=peak_loc_normalized + self.config.acqf_weight_func_post_edge_offset * peak_width_normalized,
-                             sigma=peak_width_normalized * self.config.acqf_weight_func_post_edge_width,
-                             c=0.0)
+            m = m + gaussian(
+                x,
+                a=self.config.acqf_weight_func_post_edge_gain,
+                mu=peak_loc_normalized + self.config.acqf_weight_func_post_edge_offset * peak_width_normalized,
+                sigma=peak_width_normalized * self.config.acqf_weight_func_post_edge_width,
+                c=0.0)
             m = m - sigmoid(x, r=20. / peak_width_normalized,
                             d=peak_loc_normalized + self.config.acqf_weight_func_post_edge_decay_location * peak_width_normalized)
             m = m * (1 - floor_value) + floor_value
@@ -454,6 +493,5 @@ class XANESExperimentGuide(GPExperimentGuide):
             ax.plot(x_dense, mapper(x_dense), label='Mapping')
             ax.legend()
             plt.show()
-
 
         self.feature_projection_func = projection_func
