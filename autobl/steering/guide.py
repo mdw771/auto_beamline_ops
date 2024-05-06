@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 
 from autobl.steering.configs import *
 from autobl.steering.acquisition import PosteriorStandardDeviationDerivedAcquisition
+from autobl.steering.model import ProjectedSpaceSingleTaskGP
 from autobl.util import *
 
 
@@ -248,13 +249,16 @@ class GPExperimentGuide(ExperimentGuide):
             self.acquisition_function.update_hyperparams_following_schedule()
         self.n_update_calls += 1
 
-    def train_model(self, x_data, y_data):
+    def create_model_object(self, x_data, y_data):
         # Create model and compute covariance matrix.
         assert not ('train_Yvar' in self.config.model_params.keys() and self.config.noise_variance is not None)
         additional_params = {}
         if self.config.noise_variance is not None:
             additional_params['train_Yvar'] = torch.full_like(y_data, self.config.noise_variance)
         self.model = self.config.model_class(x_data, y_data, **self.config.model_params, **additional_params)
+
+    def train_model(self, x_data, y_data):
+        self.create_model_object(x_data, y_data)
 
         # Fit hyperparameters.
         logging.info('Kernel lengthscale before optimization (normalized & standardized): {}'.format(
@@ -269,7 +273,8 @@ class GPExperimentGuide(ExperimentGuide):
         # Override kernel lengthscale if applicable.
         if self.config.override_kernel_lengthscale is not None:
             self.model.covar_module.lengthscale = self.scale_by_normalizer_bounds(
-                self.config.override_kernel_lengthscale)
+                self.config.override_kernel_lengthscale
+            )
             logging.info('Kernel lengthscale overriden to: {} ({} after normalization)'.format(
                 self.config.override_kernel_lengthscale,
                 self.scale_by_normalizer_bounds(self.config.override_kernel_lengthscale)))
@@ -330,6 +335,24 @@ class XANESExperimentGuide(GPExperimentGuide):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.acqf_weight_func = None
+        self.feature_projection_func = None
+
+    def build_model(self, x_train, y_train):
+        x_train, y_train = self.transform_data(x_train, y_train, train=True)
+        if issubclass(self.config.model_class, ProjectedSpaceSingleTaskGP):
+            self.build_feature_projection_function(x_train, y_train)
+        self.train_model(x_train, y_train)
+        self.record_data(x_train, y_train)
+
+    def create_model_object(self, x_data, y_data):
+        # Create model and compute covariance matrix.
+        assert not ('train_Yvar' in self.config.model_params.keys() and self.config.noise_variance is not None)
+        additional_params = {}
+        if self.config.noise_variance is not None:
+            additional_params['train_Yvar'] = torch.full_like(y_data, self.config.noise_variance)
+        if issubclass(self.config.model_class, ProjectedSpaceSingleTaskGP):
+            additional_params['projection_function'] = self.feature_projection_func
+        self.model = self.config.model_class(x_data, y_data, **self.config.model_params, **additional_params)
 
     def update(self, x_data, y_data):
         super().update(x_data, y_data)
@@ -383,3 +406,42 @@ class XANESExperimentGuide(GPExperimentGuide):
 
         self.acqf_weight_func = weight_func
         return
+
+    def build_feature_projection_function(self, x_train, y_train):
+        if len(x_train) < 4:
+            raise ValueError('To build a proper projection function, initial data should have at least 4 points.')
+        x_dat = to_numpy(x_train.squeeze())
+        y_dat = to_numpy(y_train.squeeze())
+
+        x_dense = np.linspace(0, 1, len(x_train) * 10)
+        y_dense = scipy.interpolate.CubicSpline(x_dat, y_dat)(x_dense)
+        grad_y = (y_dense[2:] - y_dense[:-2]) / (x_dense[2:] - x_dense[:-2])
+
+        peak_locs, peak_properties = scipy.signal.find_peaks(grad_y, height=grad_y.max() * 0.5, width=1)
+        edge_ind = np.argmax(peak_properties['peak_heights'])
+        peak_loc = float(peak_locs[edge_ind]) / len(x_dense) + (x_dense[1] - x_dense[0])
+        peak_width = peak_properties['widths'][edge_ind] / len(x_dense)
+
+        def sparseness_function(x):
+            # A basin function that looks like this: ```\___/```
+            lower_bound = self.config.project_func_sparseness_lower_bound
+            s = (sigmoid(x, r=1 / peak_width, d=peak_loc - peak_width * 5) +
+                 sigmoid(x, r=-1 / peak_width, d=peak_loc + peak_width * 50))
+            s = (s - 1.0) * (1.0 - lower_bound) + lower_bound
+            return s
+
+        sparseness = sparseness_function(x_dense)
+
+        cdf = np.cumsum(sparseness)
+        cdf = cdf - cdf[0]
+        cdf = cdf / cdf[-1]
+        cdf = to_numpy(cdf)
+        mapper = lambda test_pts: np.interp(test_pts, x_dense, cdf)
+
+        def projection_func(x):
+            x_n = to_numpy(x)
+            x_n = mapper(x_n)
+            x = torch.tensor(x_n, device=x.device)
+            return x
+
+        self.feature_projection_func = projection_func

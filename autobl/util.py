@@ -81,10 +81,16 @@ def elementwise_derivative(f, x, order=1):
 
 
 def sigmoid(x, r=1.0, d=0.0):
-    return 1.0 / (1.0 + torch.exp(-r * (x - d)))
+    if isinstance(x, torch.Tensor):
+        return 1.0 / (1.0 + torch.exp(-r * (x - d)))
+    else:
+        return 1.0 / (1.0 + np.exp(-r * (x - d)))
 
 def gaussian(x, a, mu, sigma, c):
-    return a * torch.exp(-(x - mu) ** 2 / (2 * sigma ** 2)) + c
+    if isinstance(x, torch.Tensor):
+        return a * torch.exp(-(x - mu) ** 2 / (2 * sigma ** 2)) + c
+    else:
+        return a * np.exp(-(x - mu) ** 2 / (2 * sigma ** 2)) + c
 
 
 def fit(f, data_x, data_y, init_params, n_iters=20, opt_class=torch.optim.Adam, opt_params=None):
@@ -106,3 +112,19 @@ def fit(f, data_x, data_y, init_params, n_iters=20, opt_class=torch.optim.Adam, 
 
 def rms(actual, true):
     return np.sqrt(np.mean((actual - true) ** 2))
+
+
+def estimate_sparse_gradient(x, y):
+    """
+    Given a list of data sampled on a non-uniform grid, find the 2-point numerical gradient by first
+    calculating the gradient at the mid-point of point i - 1 and i + 1, then linearly interpolate for
+    the gradient at i.
+
+    :param x: np.ndarray.
+    :param y: np.ndarray.
+    """
+    grad_x = x[1:-1]
+    grad_y_mid = (y[2:] - y[:-2]) / (x[2:] - x[:-2])
+    grad_x_mid = (x[2:] + x[:-2]) / 2.0
+    grad_y = np.interp(grad_x, grad_x_mid, grad_y_mid)
+    return grad_x, grad_y

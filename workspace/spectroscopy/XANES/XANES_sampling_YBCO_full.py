@@ -2,6 +2,7 @@ import os
 import glob
 import pickle
 
+import gpytorch.means
 import matplotlib.pyplot as plt
 import torch
 import numpy as np
@@ -13,6 +14,7 @@ from autobl.steering.configs import *
 from autobl.steering.measurement import *
 from autobl.steering.acquisition import *
 from autobl.steering.optimization import *
+from autobl.steering.model import *
 from autobl.steering.experiment import SimulatedScanningExperiment
 from autobl.util import *
 
@@ -38,14 +40,15 @@ ref_spectra_1 = torch.tensor(data_all_spectra['YBCO_eparc.0001'].to_numpy())
 energies = data_all_spectra['energy'].to_numpy()
 print('Energy range = {} eV'.format(energies[-1] - energies[0]))
 energies = torch.tensor(energies)
-y_fit = linear_fit([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)], data)
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(to_numpy(energies), data, label='data')
-ax.plot(to_numpy(energies), to_numpy(ref_spectra_0), label='ref1')
-ax.plot(to_numpy(energies), to_numpy(ref_spectra_1), label='ref2')
-ax.plot(to_numpy(energies), y_fit, label='fit', linestyle='--')
-plt.legend()
-plt.show()
+
+# y_fit = linear_fit([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)], data)
+# fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+# ax.plot(to_numpy(energies), data, label='data')
+# ax.plot(to_numpy(energies), to_numpy(ref_spectra_0), label='ref1')
+# ax.plot(to_numpy(energies), to_numpy(ref_spectra_1), label='ref2')
+# ax.plot(to_numpy(energies), y_fit, label='fit', linestyle='--')
+# plt.legend()
+# plt.show()
 
 ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
 ref_spectra_x = energies
@@ -53,10 +56,11 @@ ref_spectra_x = energies
 configs = XANESExperimentGuideConfig(
     dim_measurement_space=1,
     num_candidates=1,
-    model_class=botorch.models.SingleTaskGP,
+    # model_class=botorch.models.SingleTaskGP,
+    model_class=ProjectedSpaceSingleTaskGP,
     model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
     noise_variance=1e-6,
-    override_kernel_lengthscale=10,
+    override_kernel_lengthscale=14,
     lower_bounds=torch.tensor([energies[0]]),
     upper_bounds=torch.tensor([energies[-1]]),
     acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
@@ -89,10 +93,10 @@ configs = XANESExperimentGuideConfig(
     n_updates_create_acqf_weight_func=5,
     acqf_weight_func_floor_value=0.01,
     acqf_weight_func_post_edge_gain=3.0,
-    stopping_criterion_configs=StoppingCriterionConfig(
-        method='max_uncertainty',
-        params={'threshold': 0.08}
-    )
+    # stopping_criterion_configs=StoppingCriterionConfig(
+    #     method='max_uncertainty',
+    #     params={'threshold': 0.01}
+    # )
 )
 
 analyzer_configs = ExperimentAnalyzerConfig(
@@ -103,4 +107,4 @@ analyzer_configs = ExperimentAnalyzerConfig(
 
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=140, n_target_measurements=270)
+experiment.run(n_initial_measurements=140, n_target_measurements=180)

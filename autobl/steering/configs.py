@@ -179,6 +179,16 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
     acqf_weight_func_post_edge_width: float = 0.5
     """Width of post edge gain in acquisition weighting function as a multiple of edge width."""
 
+    project_func_sparseness_lower_bound: float = 0.5
+    """
+    Lower bound of the sparseness function used to calculate input feature projection mapping. A lower value means
+    points in flat regions before and after the absorption edge are mapped more densely, which reduces their
+    covariance distance and leads to smoother posterior mean in those regions. The input value should be between 0
+    and 1. This parameter is only used when model is ProjectedSpaceSingleTaskGP.
+    """
+
+
+
 
 @dataclasses.dataclass
 class SampleParams(Config):
