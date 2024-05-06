@@ -181,6 +181,9 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
     acqf_weight_func_post_edge_width: float = 0.5
     """Width of post edge gain in acquisition weighting function as a multiple of edge width."""
 
+    acqf_weight_func_post_edge_decay_location: float = 50.0
+    """Location where the weighting function starts to decay after the absorption edge."""
+
     project_func_sparseness_lower_bound: float = 0.5
     """
     Lower bound of the sparseness function used to calculate input feature projection mapping. A lower value means

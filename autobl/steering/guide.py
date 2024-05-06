@@ -401,6 +401,8 @@ class XANESExperimentGuide(GPExperimentGuide):
                              mu=peak_loc_normalized + self.config.acqf_weight_func_post_edge_offset * peak_width_normalized,
                              sigma=peak_width_normalized * self.config.acqf_weight_func_post_edge_width,
                              c=0.0)
+            m = m - sigmoid(x, r=20. / peak_width_normalized,
+                            d=peak_loc_normalized + self.config.acqf_weight_func_post_edge_decay_location * peak_width_normalized)
             m = m * (1 - floor_value) + floor_value
             return m
 

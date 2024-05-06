@@ -82,9 +82,11 @@ def elementwise_derivative(f, x, order=1):
 
 def sigmoid(x, r=1.0, d=0.0):
     if isinstance(x, torch.Tensor):
-        return 1.0 / (1.0 + torch.exp(-r * (x - d)))
+        mod = torch
     else:
-        return 1.0 / (1.0 + np.exp(-r * (x - d)))
+        mod = np
+    exponent = mod.clip(-r * (x - d), None, 1e2)
+    return 1.0 / (1.0 + mod.exp(exponent))
 
 def gaussian(x, a, mu, sigma, c):
     if isinstance(x, torch.Tensor):
