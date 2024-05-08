@@ -97,4 +97,9 @@ analyzer_configs = ExperimentAnalyzerConfig(
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs,
                                          auto_narrow_down_scan_range=True, narrow_down_range_bounds_ev=(-100, 200))
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=140, n_target_measurements=180)
+experiment.run(n_initial_measurements=170, n_target_measurements=210)
+
+x = np.linspace(energies[0], energies[-1], 1000)
+y = experiment.get_estimated_spectrum(x)
+plt.plot(x, y)
+plt.show()

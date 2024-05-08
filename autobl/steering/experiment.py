@@ -4,6 +4,7 @@ import pickle
 import logging
 
 import matplotlib.pyplot as plt
+import scipy.interpolate
 import torch
 import numpy as np
 import pandas as pd
@@ -42,6 +43,8 @@ class SimulatedScanningExperiment(ScanningExperiment):
         self.data_y = None
         self.data_x_truncated = None
         self.data_y_truncated = None
+        self.data_x_measured = torch.tensor([])
+        self.data_y_measured = torch.tensor([])
         self.guide = None
         self.instrument = None
         self.analyzer = None
@@ -74,10 +77,15 @@ class SimulatedScanningExperiment(ScanningExperiment):
                                                    n_init_measurements=n_initial_measurements)
         self.analyzer.enable(self.run_analysis)
 
+    def record_data(self, data_x, data_y):
+        self.data_x_measured = torch.concatenate([self.data_x_measured, data_x])
+        self.data_y_measured = torch.concatenate([self.data_y_measured, data_y])
+
     def take_initial_measurements(self, n):
         x_init = torch.linspace(self.data_x[0], self.data_x[-1], n).double().reshape(-1, 1)
         y_init = self.instrument.measure(x_init).reshape(-1, 1)
         self.n_pts_measured += n
+        self.record_data(x_init, y_init)
         return x_init, y_init
 
     def update_candidate_list(self, candidates):
@@ -114,8 +122,45 @@ class SimulatedScanningExperiment(ScanningExperiment):
         inds_keep = torch.where((self.data_x > new_range[0]) & (self.data_x < new_range[1]))[0]
         self.data_x_truncated = self.data_x[inds_keep]
         self.data_y_truncated = self.data_y[inds_keep]
-
         return x_init, y_init
+
+    def get_measured_data(self, sort=True):
+        x = self.data_x_measured
+        y = self.data_y_measured
+        if sort:
+            sorted_inds = torch.argsort(x, dim=0)
+            x = x[sorted_inds]
+            y = y[sorted_inds]
+        return x, y
+
+    def get_estimated_spectrum(self, x):
+        """
+        Get estimated spectrum based on data measured.
+
+        Input x may contain data outside the range that is actually guided by adaptive sampler. In that case,
+        queried points outside the range are spline interpolated from measured data. For queried points within the
+        guided range, the posterior mean is used instead.
+
+        :param x: np.ndarray | Tensor. Points where the estimated spectrum values are to be queried.
+        :return: np.ndarray. Estimated spectrum.
+        """
+        if len(x.shape) == 1:
+            x = x.reshape(-1, 1)
+        x = to_tensor(x)
+
+        # First, run cubic spline interpolation for all data
+        x_dat = to_numpy(x.squeeze())
+        x_measured, y_measured = self.get_measured_data(sort=True)
+        y_dat = scipy.interpolate.CubicSpline(to_numpy(x_measured.squeeze()), to_numpy(y_measured.squeeze()))(x_dat)
+
+        # Second, get posterior mean (which may also be spline interpolated depending on setting) for points
+        # within the range that is guided by adaptive sampler.
+        inds_in_range = torch.where((x > self.guide.config.lower_bounds[0]) & (x < self.guide.config.upper_bounds[0]))[0]
+        x_in_range = x[inds_in_range]
+        y_in_range, _ = self.guide.get_posterior_mean_and_std(x_in_range, transform=True, untransform=True)
+        y_in_range = to_numpy(y_in_range.squeeze())
+        y_dat[inds_in_range] = y_in_range
+        return y_dat
 
     def run(self, n_initial_measurements=10, n_target_measurements=70):
         x_init, y_init = self.take_initial_measurements(n_initial_measurements)
@@ -139,4 +184,5 @@ class SimulatedScanningExperiment(ScanningExperiment):
             if self.guide.stopping_criterion.check():
                 break
 
+        self.record_data(*self.guide.untransform_data(self.guide.data_x[len(x_init):], self.guide.data_y[len(y_init):]))
         self.analyzer.save_analysis()
