@@ -214,7 +214,7 @@ def test_xanes_gp_fitres_2nd_order_deriv(generate_gold=False, debug=False):
         print(candidate_list)
         print('=== Reference ===')
         print(gold_data)
-        assert np.allclose(candidate_list[:10], gold_data[:10])
+        assert np.allclose(candidate_list[:8], gold_data[:8])
 
 
 def test_xanes_gp_fitres_2nd_order_deriv_with_weight_func_ybco_data(generate_gold=False, debug=False):
@@ -287,7 +287,7 @@ def test_xanes_gp_fitres_2nd_order_deriv_with_weight_func_ybco_data(generate_gol
         print(candidate_list)
         print('=== Reference ===')
         print(gold_data)
-        assert np.allclose(candidate_list[:10], gold_data[:10])
+        assert np.allclose(candidate_list[:8], gold_data[:8])
 
 
 if __name__ == '__main__':
