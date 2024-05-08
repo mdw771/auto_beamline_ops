@@ -193,5 +193,6 @@ class ScanningExperimentAnalyzer(Analyzer):
             self.save_intermediate_figure()
             self.save_convergence_figure_and_data()
             self.save_intermediate_data_dict()
-        else:
-            plt.close('all')
+        if self.configs.show:
+            plt.show()
+        plt.close('all')

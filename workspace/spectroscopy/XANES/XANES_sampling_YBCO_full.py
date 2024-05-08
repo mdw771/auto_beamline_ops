@@ -41,26 +41,17 @@ energies = data_all_spectra['energy'].to_numpy()
 print('Energy range = {} eV'.format(energies[-1] - energies[0]))
 energies = torch.tensor(energies)
 
-# y_fit = linear_fit([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)], data)
-# fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-# ax.plot(to_numpy(energies), data, label='data')
-# ax.plot(to_numpy(energies), to_numpy(ref_spectra_0), label='ref1')
-# ax.plot(to_numpy(energies), to_numpy(ref_spectra_1), label='ref2')
-# ax.plot(to_numpy(energies), y_fit, label='fit', linestyle='--')
-# plt.legend()
-# plt.show()
-
 ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
 ref_spectra_x = energies
 
 configs = XANESExperimentGuideConfig(
     dim_measurement_space=1,
     num_candidates=1,
-    # model_class=botorch.models.SingleTaskGP,
-    model_class=ProjectedSpaceSingleTaskGP,
+    model_class=botorch.models.SingleTaskGP,
+    # model_class=ProjectedSpaceSingleTaskGP,
     model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
     noise_variance=1e-6,
-    override_kernel_lengthscale=14,
+    override_kernel_lengthscale=7,
     lower_bounds=torch.tensor([energies[0]]),
     upper_bounds=torch.tensor([energies[-1]]),
     acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
@@ -98,9 +89,12 @@ configs = XANESExperimentGuideConfig(
 analyzer_configs = ExperimentAnalyzerConfig(
     name='YBCO3dataFull',
     output_dir='outputs',
-    n_plot_interval=5
+    n_plot_interval=5,
+    save=False,
+    show=True
 )
 
-experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
+experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs,
+                                         auto_narrow_down_scan_range=True, narrow_down_range_bounds_ev=(-100, 200))
 experiment.build(energies, data)
 experiment.run(n_initial_measurements=140, n_target_measurements=180)

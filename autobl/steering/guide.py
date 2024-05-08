@@ -102,7 +102,7 @@ class GPExperimentGuide(ExperimentGuide):
         self.n_update_calls = 0
 
     def build_transform(self):
-        self.input_transform = Normalize(d=self.config.dim_measurement_space)
+        self.input_transform = Normalize(d=self.config.dim_measurement_space, bounds=self.get_bounds())
         self.outcome_transform = Standardize(m=self.config.dim_measurement_space)
 
     def record_data(self, x, y):
@@ -110,7 +110,7 @@ class GPExperimentGuide(ExperimentGuide):
         self.data_y = torch.concatenate([self.data_y, y])
 
     def build_model(self, x_train, y_train):
-        x_train, y_train = self.transform_data(x_train, y_train, train=True)
+        x_train, y_train = self.transform_data(x_train, y_train, train_x=False, train_y=True)
         self.train_model(x_train, y_train)
         self.record_data(x_train, y_train)
 
@@ -186,7 +186,7 @@ class GPExperimentGuide(ExperimentGuide):
             s = self.input_transform.bounds[1][dim] - self.input_transform.bounds[0][dim]
             return x * s
 
-    def transform_data(self, x=None, y=None, train=False):
+    def transform_data(self, x=None, y=None, train_x=False, train_y=False):
         if x is not None:
             x = x.double()
         if y is not None:
@@ -196,7 +196,7 @@ class GPExperimentGuide(ExperimentGuide):
             if x.ndim == 1:
                 x = x[:, None]
                 do_squeeze = True
-            if train:
+            if train_x:
                 self.input_transform.train()
             else:
                 self.input_transform.eval()
@@ -204,7 +204,7 @@ class GPExperimentGuide(ExperimentGuide):
             if do_squeeze:
                 x = x[:, 0]
         if y is not None and self.outcome_transform is not None:
-            if train:
+            if train_y:
                 self.outcome_transform.train()
             else:
                 self.outcome_transform.eval()
@@ -237,7 +237,7 @@ class GPExperimentGuide(ExperimentGuide):
         :param x_data: Tensor. Features of new data.
         :param y_data: Tensor. Observations of new data.
         """
-        x_data, y_data = self.transform_data(x_data, y_data, train=False)
+        x_data, y_data = self.transform_data(x_data, y_data)
         self.record_data(x_data, y_data)
         additional_params = {}
         if self.config.noise_variance is not None:
@@ -281,7 +281,7 @@ class GPExperimentGuide(ExperimentGuide):
 
     def get_posterior_mean_and_std(self, x, transform=True, untransform=True, **kwargs):
         if transform:
-            x_transformed, _ = self.transform_data(x, None, train=False)
+            x_transformed, _ = self.transform_data(x, None)
         else:
             x_transformed = x
         posterior = self.model.posterior(x_transformed)
@@ -304,7 +304,7 @@ class GPExperimentGuide(ExperimentGuide):
         mu, sigma = self.get_posterior_mean_and_std(x)
         mu = mu.reshape(-1).cpu().detach().numpy()
         sigma = sigma.reshape(-1).cpu().detach().numpy()
-        x_transformed, _ = self.transform_data(x, None, train=False)
+        x_transformed, _ = self.transform_data(x, None)
         acq = self.acquisition_function(x_transformed.view(-1, 1, 1)).reshape(-1).cpu().detach().numpy()
 
         if isinstance(x, torch.Tensor):
@@ -338,7 +338,7 @@ class XANESExperimentGuide(GPExperimentGuide):
         self.feature_projection_func = None
 
     def build_model(self, x_train, y_train):
-        x_train, y_train = self.transform_data(x_train, y_train, train=True)
+        x_train, y_train = self.transform_data(x_train, y_train, train_x=False, train_y=True)
         if issubclass(self.config.model_class, ProjectedSpaceSingleTaskGP):
             self.build_feature_projection_function(x_train, y_train)
         self.train_model(x_train, y_train)
@@ -386,7 +386,7 @@ class XANESExperimentGuide(GPExperimentGuide):
             return super().get_posterior_mean_and_std(x, transform=transform, untransform=untransform)
         _, sigma = super().get_posterior_mean_and_std(x, transform=transform, untransform=untransform)
         if transform:
-            x_transformed, _ = self.transform_data(x, None, train=False)
+            x_transformed, _ = self.transform_data(x, None)
         else:
             x_transformed = x
         mu = self.get_estimated_data_by_interpolation(x_transformed)
@@ -448,20 +448,62 @@ class XANESExperimentGuide(GPExperimentGuide):
         self.acqf_weight_func = weight_func
         return
 
+    def estimate_edge_location_and_width(self, x_init, y_init, input_is_transformed=True, run_in_transformed_space=True,
+                                         return_normalized_values=True):
+        """
+        Given initial observations, estimate the location and width of the absorption edge using gradient.
+
+        :param x_init: Tensor.
+        :param y_init: Tensor.
+        :param input_is_transformed: bool. If True, input data are assumed to be already normalized (x) and
+            standardized (y). Normalization and standardization are supposed to be done with previously learned
+            transforms.
+        :param run_in_transformed_space: bool. If True, input data will be transformed if input_is_transformed is False.
+        :param return_normalized_values: bool. If True, edge location and width will be normalized before returned
+            if they are not yet in the transformed space.
+        :return: edge location, edge width.
+        """
+        if not input_is_transformed and run_in_transformed_space:
+            x_init, y_init = self.transform_data(x_init, y_init)
+        x_dat = to_numpy(x_init.squeeze())
+        y_dat = to_numpy(y_init.squeeze())
+
+        if run_in_transformed_space:
+            x_dense = np.linspace(0, 1, len(x_init) * 10)
+        else:
+            x_dense = np.linspace(x_dat[0], x_dat[-1], len(x_init) * 10)
+        y_dense = scipy.interpolate.CubicSpline(x_dat, y_dat)(x_dense)
+        grad_y = (y_dense[2:] - y_dense[:-2]) / (x_dense[2:] - x_dense[:-2])
+        dense_psize = x_dense[1] - x_dense[0]
+
+        peak_locs, peak_properties = scipy.signal.find_peaks(grad_y, height=grad_y.max() * 0.5, width=1)
+        edge_ind = np.argmax(peak_properties['peak_heights'])
+        peak_loc = peak_locs[edge_ind]
+        peak_width = peak_properties['widths'][edge_ind]
+
+        # Convert peak location and width from pixels to desired unit.
+        if return_normalized_values and not run_in_transformed_space:
+            peak_loc = float(peak_loc) / len(x_dense) + dense_psize
+            peak_width = peak_width / len(x_dense)
+        elif not return_normalized_values and run_in_transformed_space:
+            peak_loc, _ = self.untransform_data(float(peak_loc))
+            peak_width, _ = self.untransform_data(peak_width)
+        elif not return_normalized_values and not run_in_transformed_space:
+            peak_loc = x_dense[peak_loc]
+            peak_width = peak_width * dense_psize
+        return peak_loc, peak_width
+
     def build_feature_projection_function(self, x_train, y_train):
         if len(x_train) < 4:
             raise ValueError('To build a proper projection function, initial data should have at least 4 points.')
         x_dat = to_numpy(x_train.squeeze())
         y_dat = to_numpy(y_train.squeeze())
-
         x_dense = np.linspace(0, 1, len(x_train) * 10)
-        y_dense = scipy.interpolate.CubicSpline(x_dat, y_dat)(x_dense)
-        grad_y = (y_dense[2:] - y_dense[:-2]) / (x_dense[2:] - x_dense[:-2])
-
-        peak_locs, peak_properties = scipy.signal.find_peaks(grad_y, height=grad_y.max() * 0.5, width=1)
-        edge_ind = np.argmax(peak_properties['peak_heights'])
-        peak_loc = float(peak_locs[edge_ind]) / len(x_dense) + (x_dense[1] - x_dense[0])
-        peak_width = peak_properties['widths'][edge_ind] / len(x_dense)
+        peak_loc, peak_width = self.estimate_edge_location_and_width(x_train, y_train,
+                                                                     input_is_transformed=True,
+                                                                     run_in_transformed_space=True,
+                                                                     return_normalized_values=True
+                                                                     )
 
         def sparseness_function(x):
             # A basin function that looks like this: ```\___/```

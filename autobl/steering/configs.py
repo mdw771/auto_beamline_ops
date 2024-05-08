@@ -65,6 +65,9 @@ class ExperimentAnalyzerConfig(Config):
     save: bool = True
     """If True, analysis results will be saved to `output_dir`."""
 
+    show: bool = False
+    """If True, analysis figures will be displayed."""
+
 
 @dataclasses.dataclass
 class ExperimentGuideConfig(Config):
