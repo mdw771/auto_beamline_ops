@@ -3,16 +3,42 @@ import numpy as np
 from autobl.bounding_box import BoundingBox
 
 
-def fit_circle(point_list):
+def fit_circle(point_list, return_residue=False):
     point_list = np.array(point_list)
     y, x = point_list[:, 0], point_list[:, 1]
     a_mat = np.stack([y, x, np.ones_like(y)], axis=1)
     b_vec = y ** 2 + x ** 2
     x_vec = np.linalg.pinv(a_mat) @ b_vec
+    residue = np.mean((a_mat @ x_vec - b_vec) ** 2)
     yc = x_vec[0] / 2
     xc = x_vec[1] / 2
     r = np.sqrt(x_vec[2] + yc ** 2 + xc ** 2)
+    if return_residue:
+        return (yc, xc, r), residue
     return yc, xc, r
+
+
+def calculate_circle_fitting_residue(circle_params, ref_mask):
+    """
+    Calculate the MSE residue between a disk determined by (yc, xc, r) and a binary mask.
+    """
+    yc, xc, r = circle_params
+    y, x = np.mgrid[:ref_mask.shape[0], :ref_mask.shape[1]]
+    circ_mask = (y - yc) ** 2 + (x - xc) ** 2 <= r ** 2
+    residue = np.mean((circ_mask - ref_mask) ** 2)
+    import matplotlib.pyplot as plt
+    return residue
+
+def calculate_circle_fitting_iou(circle_params, ref_mask):
+    """
+    Calculate the MSE residue between a disk determined by (yc, xc, r) and a binary mask.
+    """
+    yc, xc, r = circle_params
+    y, x = np.mgrid[:ref_mask.shape[0], :ref_mask.shape[1]]
+    circ_mask = (y - yc) ** 2 + (x - xc) ** 2 <= r ** 2
+    area_intersect = np.sum(circ_mask * ref_mask)
+    iou = area_intersect / (np.sum(circ_mask) + np.sum(ref_mask) - area_intersect)
+    return iou
 
 
 def get_region_bbox(mask):
