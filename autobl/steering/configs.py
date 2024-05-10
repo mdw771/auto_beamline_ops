@@ -294,7 +294,8 @@ class FlyScanExperimentSetupParams(ExperimentSetupParams):
     """The time that the sample is exposed per measurement."""
 
     deadtime_sec: float = 1.0
-    """The time that the detector is inactive and therefore not collecting data between measurements."""
+    """The time that the detector is inactive and therefore not collecting data
+    between measurements."""
 
     probe: Optional[np.ndarray] = None
     """
@@ -305,18 +306,22 @@ class FlyScanExperimentSetupParams(ExperimentSetupParams):
 
     @property
     def exposure_length_nm(self):
+        """Exposure length in nm"""
         return self.exposure_sec * self.scan_speed_nm_sec
 
     @property
     def exposure_length_pixel(self):
+        """Exposure length in pixel equivalent"""
         return self.exposure_length_nm / self.psize_nm
 
     @property
     def dead_length_nm(self):
+        """Dead scan length in nm"""
         return self.deadtime_sec * self.scan_speed_nm_sec
 
     @property
     def dead_length_pixel(self):
+        """Dead scan length in pixel equivalent"""
         return self.dead_length_nm / self.psize_nm
 
 
