@@ -1,7 +1,7 @@
 """Measurement methods"""
 
 import copy
-from typing import Callable #, Sequence
+from typing import Callable, List  # , Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -19,15 +19,13 @@ class Measurement:
 
     def __init__(self, *args, **kwargs):
         """
-        Initialize the 
+        Initialize the
         """
-        raise NotImplementedError
 
     def measure(self, *args, **kwargs):
         """
         Measure the sample
         """
-        raise NotImplementedError
 
 
 class SimulatedMeasurement(Measurement):
@@ -98,7 +96,7 @@ class FlyScanSingleValueSimulationMeasurement(Measurement):
         self.eps = 1e-6
         self.points_to_sample_all_exposures = []
 
-    def measure(self, vertex_list, vertex_unit="pixel", *args, **kwargs):
+    def measure(self, vertex_list, *args, vertex_unit="pixel", **kwargs):
         """
         Perform measurement given a fly scan path defined by a list of vertices.
 
@@ -229,6 +227,7 @@ class FlyScanSingleValueSimulationMeasurement(Measurement):
         fig, ax = plt.subplots(1, 1)
         ax.scatter(pts[:, 1], pts[:, 0])
         plt.show()
+        return fig, ax
 
     def get_interpolated_values_from_image(self, point_list, normalize_probe=True):
         """
@@ -254,22 +253,28 @@ class FlyScanSingleValueSimulationMeasurement(Measurement):
             if normalize_probe:
                 probe = probe / np.sum(probe)
             for this_y, this_x in point_list:
+                # Expand around each point to capture probe area
                 this_y_all = np.linspace(
-                    this_y - probe.shape[0] / 2.0,
-                    this_y + probe.shape[0] / 2.0,
+                    this_y - probe.shape[0] / 2.0 + 0.5,
+                    this_y + probe.shape[0] / 2.0 - 0.5,
                     probe.shape[0],
                 )
                 this_x_all = np.linspace(
-                    this_x - probe.shape[1] / 2.0,
-                    this_x + probe.shape[1] / 2.0,
+                    this_x - probe.shape[1] / 2.0 + 0.5,
+                    this_x + probe.shape[1] / 2.0 - 0.5,
                     probe.shape[1],
                 )
+
+                # Combine expansions in x and y to get total expanded area
                 xx, yy = np.meshgrid(this_x_all, this_y_all)
                 yy = yy.reshape(-1)
                 xx = xx.reshape(-1)
+
+                # Get image interpolated values from the image
                 vals = ndi.map_coordinates(
                     self.configs.sample_params.image, [yy, xx], order=1, mode="nearest"
                 )
+                # ... and multiply them with the probe weights
                 val = np.sum(vals * probe.reshape(-1))
                 sampled_vals.append(val)
             return sampled_vals
@@ -279,6 +284,7 @@ class FlyScanPathGenerator:
     """
     Fly scan path generator for raster scans
     """
+
     def __init__(self, shape, psize_nm=None, return_coordinates_type="pixel"):
         """
         Fly scan path generator.
@@ -303,10 +309,16 @@ class FlyScanPathGenerator:
         plt.show()
 
     def generate_raster_scan_path(
-        self, pos_top_left, pos_bottom_right, vertical_spacing
-    ):
+        self,
+        pos_top_left: List[float],
+        pos_bottom_right: List[float],
+        vertical_spacing: float,
+    ) -> List[List[float]]:
         """
-        Generate a raster (regular) scan path.
+        Generate a raster (regular) scan path starting at pos_top_left and
+        scanning (down) towards pos_bottom_right. Creates long left-right scan
+        segments and short vertical (down) segments. Vertical segments are not
+        scanned (dead).
 
         :param pos_top_left: list[float, float]. Top left vertex of the scan
             grid in pixel. Coordinates are defined with regards to the support.
@@ -316,7 +328,8 @@ class FlyScanPathGenerator:
         :return: list[list[float, float]]. A list of vertices that define the
             scan path.
         """
-        current_side = 0  # Indicates whether the current vertex is on the left or right of the grid.
+        # Indicates whether the current vertex is on the left or right of the grid.
+        current_side = 0
         current_point = copy.deepcopy(np.array(pos_top_left))
         self.generated_path.append(copy.deepcopy(current_point))
         while True:
