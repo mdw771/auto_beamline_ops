@@ -279,6 +279,31 @@ class FlyScanSingleValueSimulationMeasurement(Measurement):
                 sampled_vals.append(val)
             return sampled_vals
 
+    def get_interpolated_values_from_image_2(
+        self, point_list: np.ndarray, normalize_probe: bool = True
+    ):
+        """Use a convolution to simplify"""
+        if not isinstance(point_list, np.ndarray):
+            point_list = np.array(point_list)  # [i_sample, (y,x)]
+        probe = self.configs.setup_params.probe
+        if probe is None:
+            probe = np.ones((1, 1))
+        if normalize_probe:
+            probe /= np.sum(probe)
+        shift = np.zeros((2,))
+        if probe.shape[0] % 2 == 0:
+            # even probe shape, adjust positions to accommodate different center
+            shift[0] = -0.5
+        if probe.shape[1] % 2 == 0:
+            shift[1] = -0.5
+        probe_image = ndi.convolve(
+            self.configs.sample_params.image, probe, mode="nearest"
+        )
+        sampled_vals = ndi.map_coordinates(
+            probe_image, point_list.T + shift[:, np.newaxis], order=1, mode="nearest"
+        )
+        return sampled_vals
+
 
 class FlyScanPathGenerator:
     """
