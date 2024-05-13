@@ -177,7 +177,7 @@ class Segmentor:
         mask_edge = ndi.binary_dilation(mask, np.ones([3, 3])) - mask
         return mask_edge
 
-    def is_round(self, mask):
+    def is_round(self, mask, method='circle_fit', threshold=0.5):
         """
         Calculate the eigenvalues of the principle axes of the non-zero elements in a given mask, then calculate
         the ratio. If the ratio is close enough to 1, the distribution can be considered to be close enough to a disk.
@@ -185,11 +185,22 @@ class Segmentor:
         :param mask: np.ndarray.
         :return: bool.
         """
-        eigen_value_ratio = self.calculate_region_principal_axis_eigenvalue_ratio(mask)
-        if eigen_value_ratio < 10:
-            return True
-        else:
-            return False
+        if method == 'circle_fit':
+            mask = mask.astype(int)
+            edge_points = np.where(mask - ndi.binary_erosion(mask, structure=np.ones([3, 3])) > 0)
+            edge_points = np.stack(edge_points, axis=1)
+            circ_params = fit_circle(edge_points)
+            iou = calculate_circle_fitting_iou(circ_params, mask)
+            if iou > threshold:
+                return True
+            else:
+                return False
+        elif method == 'pca':
+            eigen_value_ratio = self.calculate_region_principal_axis_eigenvalue_ratio(mask)
+            if eigen_value_ratio < 10:
+                return True
+            else:
+                return False
 
     def sort_labels(self, labeled_mask, n_labels=None, by='bbox_size'):
         if n_labels is None:
@@ -301,9 +312,9 @@ class BubbleSegmentor(Segmentor):
         # if self.cell_window_bbox.is_isolated_from(bbox):
         if not self.intersects_with_cell_window_mask(mask):
             return True
-        if np.count_nonzero(mask) < 100 / self.downsample ** 2:
+        if np.count_nonzero(mask) < 500 / self.downsample ** 2:
             return True
-        if self.is_round(mask):
+        if self.is_round(mask, method='circle_fit'):
             return True
         return False
 
