@@ -2,10 +2,17 @@
 Tests for various flyscan measurements (raster scans and arbitrary paths)
 """
 import os
+import sys
 import argparse
 
+# Get the full path to the parent directory
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+# Add the parent directory to the system path
+sys.path.append(parent_dir)
+
 import tifffile
-# from pathlib import Path
+from pathlib import Path
 from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
 import numpy as np

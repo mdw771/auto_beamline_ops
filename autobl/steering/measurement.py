@@ -95,6 +95,7 @@ class FlyScanSingleValueSimulationMeasurement(Measurement):
         self.measured_positions = None
         self.eps = 1e-6
         self.points_to_sample_all_exposures = []
+        self.probe_image = None
 
     def measure(self, vertex_list, *args, vertex_unit="pixel", **kwargs):
         """
@@ -121,13 +122,60 @@ class FlyScanSingleValueSimulationMeasurement(Measurement):
             if len(pts_to_sample) == 0:
                 continue
             sampled_vals = self.get_interpolated_values_from_image(pts_to_sample)
+            # averages of measurements and positions
             meas_value_list.append(np.mean(sampled_vals))
             meas_pos_list.append(np.mean(pts_to_sample, axis=0))
         self.measured_values = np.array(meas_value_list)
         self.measured_positions = np.stack(meas_pos_list, axis=0)
         return self.measured_values
 
-    def build_sampling_points(self, vertex_list):
+    def build_sampling_points(self, vertex_list: np.ndarray | List[List[float]]):
+        """
+        Given vertices, compute the points that are sampled along the scan path
+        (between vertices)
+        """
+        if not isinstance(vertex_list, np.ndarray):
+            vertex_list = np.array(vertex_list)
+        # distances between vertices
+        lengths = np.zeros((vertex_list.shape[0],))
+        lengths[1:] = np.linalg.norm(np.diff(vertex_list, axis=0), axis=1)
+
+        # cumulative distance along points
+        arc_lengths = np.cumsum(lengths)
+
+        # arc length interpolator
+        interpolator = scipy.interpolate.make_interp_spline(
+            arc_lengths, vertex_list, k=1
+        )
+
+        # generate samples along arc length interpolator
+        step_size = self.configs.step_size_for_integration_nm
+        steps = np.arange(0, arc_lengths[-1], step_size)
+
+        # determine if the samples are in an exposure +- eps
+        exposure = (
+            np.fmod(
+                steps / self.configs.setup_params.scan_speed_nm_sec + self.configs.eps,
+                self.configs.setup_params.exposure_sec
+                + self.configs.setup_params.deadtime_sec,
+            )
+            <= self.configs.setup_params.exposure_sec + 2 * self.configs.eps
+        )
+
+        # get the associated exposure number for each sample point
+        exposure_number = ((steps + self.configs.eps) // (
+            self.configs.setup_params.exposure_sec
+            + self.configs.setup_params.deadtime_sec
+        )).astype(int)
+
+        # get positions for each exposure
+        self.points_to_sample_all_exposures = []
+        for i in range(exposure_number[-1]):
+            self.points_to_sample_all_exposures.append(
+                interpolator(steps[np.logical_and(exposure, exposure_number == i)])
+            )
+
+    def build_sampling_points_old(self, vertex_list):
         """
         Given vertices, compute the points that are sampled along the scan path
         (between vertices)
@@ -223,13 +271,14 @@ class FlyScanSingleValueSimulationMeasurement(Measurement):
         Plot the points that will be sampled along the path
         """
         pts = np.concatenate(self.points_to_sample_all_exposures, axis=0)
+        # pts = self.points_to_sample_all_exposures
 
         fig, ax = plt.subplots(1, 1)
         ax.scatter(pts[:, 1], pts[:, 0])
         plt.show()
         return fig, ax
 
-    def get_interpolated_values_from_image(self, point_list, normalize_probe=True):
+    def get_interpolated_values_from_image_old(self, point_list, normalize_probe=True):
         """
         Obtain interpolated values from the image at given locations.
 
@@ -279,30 +328,36 @@ class FlyScanSingleValueSimulationMeasurement(Measurement):
                 sampled_vals.append(val)
             return sampled_vals
 
-    def get_interpolated_values_from_image_2(
+    def get_interpolated_values_from_image(
         self, point_list: np.ndarray, normalize_probe: bool = True
     ):
-        """Use a convolution to simplify"""
-        if not isinstance(point_list, np.ndarray):
-            point_list = np.array(point_list)  # [i_sample, (y,x)]
+        """
+        Obtain interpolated values from the image at given locations.
+
+        Apply the probe PSF as a convolution and then sample (with
+        interpolation) the convolved image.
+
+        :param point_list: list[list[float, float]]. List of point positions.
+        :return: list[float].
+        """
         probe = self.configs.setup_params.probe
         if probe is None:
             probe = np.ones((1, 1))
         if normalize_probe:
             probe /= np.sum(probe)
-        shift = np.zeros((2,))
-        if probe.shape[0] % 2 == 0:
-            # even probe shape, adjust positions to accommodate different center
-            shift[0] = -0.5
-        if probe.shape[1] % 2 == 0:
-            shift[1] = -0.5
-        probe_image = ndi.convolve(
-            self.configs.sample_params.image, probe, mode="nearest"
+        if self.probe_image is None:
+            self.probe_image = convolve_probe_image(
+                self.configs.sample_params.image, probe
+            )
+        if not isinstance(point_list, np.ndarray):
+            point_list = np.array(point_list)  # [i_sample, (y,x)]
+        return get_interpolated_values_from_image(
+            point_list,
+            self.configs.sample_params.image,
+            self.probe_image,
+            probe,
+            normalize_probe,
         )
-        sampled_vals = ndi.map_coordinates(
-            probe_image, point_list.T + shift[:, np.newaxis], order=1, mode="nearest"
-        )
-        return sampled_vals
 
 
 class FlyScanPathGenerator:
@@ -376,3 +431,63 @@ class FlyScanPathGenerator:
         if self.return_coordinates_type == "nm":
             return self.generated_path * self.psize_nm
         return self.generated_path
+
+
+def convolve_probe_image(image: np.ndarray, probe: np.ndarray = None) -> np.ndarray:
+    """
+    Convolve the image with the probe point spread function
+
+    :param image: np.ndarray[float, float]. Image to sample.
+    :param probe: np.ndarray[float, float]. Probe point spread function.
+    :return: Image convolved with the point spread function.
+    """
+    if probe is None:
+        return image
+    return ndi.convolve(image, probe, mode="nearest")
+
+
+def get_interpolated_values_from_image(
+    point_list: np.ndarray | List[List[float]],
+    image: np.ndarray = None,
+    probe_image: np.ndarray = None,
+    probe: np.ndarray = np.ones((1, 1)),
+    normalize_probe: bool = True,
+):
+    """
+    Obtain interpolated values from the image at given locations.
+
+    Apply the probe PSF as a convolution and then sample (with
+    interpolation) the convolved image.
+
+    :param point_list: list[list[float, float]]. List of point positions.
+    :param image: np.ndarray. Image to measure from.
+    :param probe_image: np.ndarray. Convolved image with point spread function.
+    :param probe: np.ndarray. Point spread function.
+    :param normalize_probe: bool. Make probe weights sum to 1.
+    :return: list[float].
+    """
+    if image is None and probe_image is None:
+        raise ValueError("No image provided.")
+    if not isinstance(point_list, np.ndarray):
+        point_list = np.array(point_list)  # [i_sample, (y,x)]
+    if normalize_probe:
+        probe /= np.sum(probe)
+
+    # When the probe has an even shape, convolution if off center
+    shift = np.zeros((2,))
+    if probe.shape[0] % 2 == 0:
+        shift[0] = -0.5
+    if probe.shape[1] % 2 == 0:
+        shift[1] = -0.5
+    if probe_image is None:
+        if np.max(probe.shape) > 1:
+            probe_image = convolve_probe_image(image, probe)
+        else:
+            probe_image = image * probe
+    sampled_vals = ndi.map_coordinates(
+        probe_image,
+        point_list.T + shift[:, np.newaxis],
+        order=1,
+        mode="nearest",
+    )
+    return sampled_vals
