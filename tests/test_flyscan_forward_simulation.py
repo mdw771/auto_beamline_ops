@@ -9,6 +9,7 @@ import numpy as np
 
 from autobl.steering.configs import *
 from autobl.steering.measurement import *
+from autobl.image_proc import DenseReconstructor
 
 
 def run_simulation(image, scan_path, probe=None):
@@ -120,7 +121,7 @@ if __name__ == '__main__':
     def show_results(measured_positions, measured_values):
         image = tifffile.imread(os.path.join('data', 'xrf', 'xrf_2idd_Cs_L.tiff'))
         grid_y, grid_x = np.mgrid[:image.shape[0], :image.shape[1]]
-        recon = griddata(measured_positions, measured_values, (grid_y, grid_x))
+        recon = DenseReconstructor(method='linear').reconstruct(measured_positions, measured_values, (grid_y, grid_x))
 
         fig, axes = plt.subplots(1, 2)
         axes[0].imshow(image)
