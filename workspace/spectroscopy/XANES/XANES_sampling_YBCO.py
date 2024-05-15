@@ -55,7 +55,7 @@ configs = XANESExperimentGuideConfig(
     model_class=botorch.models.SingleTaskGP,
     model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
     noise_variance=1e-6,
-    override_kernel_lengthscale=7,
+    # override_kernel_lengthscale=7,
     lower_bounds=torch.tensor([energies[0]]),
     upper_bounds=torch.tensor([energies[-1]]),
     acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
@@ -102,4 +102,4 @@ analyzer_configs = ExperimentAnalyzerConfig(
 
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=20, n_target_measurements=70)
+experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')

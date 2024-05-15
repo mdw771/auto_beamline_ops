@@ -51,7 +51,7 @@ configs = XANESExperimentGuideConfig(
     # model_class=ProjectedSpaceSingleTaskGP,
     model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
     noise_variance=1e-6,
-    override_kernel_lengthscale=7,
+    # override_kernel_lengthscale=7,
     lower_bounds=torch.tensor([energies[0]]),
     upper_bounds=torch.tensor([energies[-1]]),
     acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
@@ -97,9 +97,10 @@ analyzer_configs = ExperimentAnalyzerConfig(
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs,
                                          auto_narrow_down_scan_range=True, narrow_down_range_bounds_ev=(-100, 200))
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=170, n_target_measurements=210)
+experiment.run(n_initial_measurements=170, n_target_measurements=230, initial_measurement_method='random')
 
 x = np.linspace(energies[0], energies[-1], 1000)
 y = experiment.get_estimated_spectrum(x)
 plt.plot(x, y)
+plt.plot(energies.reshape(-1), data.reshape(-1))
 plt.show()
