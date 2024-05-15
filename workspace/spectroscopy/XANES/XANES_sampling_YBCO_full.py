@@ -60,8 +60,8 @@ configs = XANESExperimentGuideConfig(
                                  'reference_spectra_x': ref_spectra_x,
                                  'reference_spectra_y': ref_spectra_y,
                                  'phi_r': None,
-                                 'phi_g': None, #2e-2,
-                                 'phi_g2': None, #3e-4
+                                 'phi_g': 1e-2, #2e-2,
+                                 'phi_g2': 1e-4, #3e-4
                                  'beta': 0.999,
                                  'gamma': 0.99,
                                  'addon_term_lower_bound': 3e-2,
