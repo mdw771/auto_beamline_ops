@@ -1,4 +1,8 @@
+from typing import Tuple, Literal, Optional
+
 import numpy as np
+import scipy.interpolate
+from sklearn.neighbors import NearestNeighbors
 
 from autobl.bounding_box import BoundingBox
 
@@ -81,3 +85,79 @@ def point_to_line_distance(pts, line_pt_1, line_pt_2):
     """
     d = np.abs(np.cross(line_pt_2 - line_pt_1, pts - line_pt_1) / np.linalg.norm(line_pt_2 - line_pt_1))
     return d
+
+
+class DenseReconstructor:
+    """
+    Reconstruct an image in dense pixel grid from sparse points.
+
+    Inverse distance weighted interpolation (IDW) is adapted from FaST:
+    https://github.com/saugatkandel/fast_smart_scanning
+    """
+
+    def __init__(self, method: Literal['idw', 'linear'] = 'idw', options: Optional[dict] = None):
+        """
+        The constructor.
+
+        :param method: str. The method of interpolation.
+            'idw': inverse distance weighted interpolation.
+            'linear': linear interpolation using scipt.interpolate.griddata.
+        :param options: Optional[dict]. Options.
+            When method is 'idw':
+                n_neighbors: number of neighbors whose values are used to calculate the interpolation for each point.
+        :return: np.ndarray.
+        """
+        self.method = method
+        self.options = options if options is not None else {}
+
+    def reconstruct(self, points: np.ndarray, values: np.ndarray, meshgrids: Tuple[np.ndarray, np.ndarray]):
+        """
+        Reconstruct a dense image.
+
+        :param points: np.ndarray. A (N, 2) array of measured points.
+        :param values: np.ndarray. A 1-D array of measured values.
+        :param meshgrids:
+        :return:
+        """
+        if self.method == 'linear':
+            recon = self.reconstruct_linear(points, values, meshgrids)
+        elif self.method == 'idw':
+            recon = self.reconstruct_idw(points, values, meshgrids)
+        else:
+            raise ValueError('{} is not a valid method.'.format(self.method))
+        return recon
+
+    def reconstruct_linear(self, points: np.ndarray, values: np.ndarray, meshgrids: Tuple[np.ndarray, np.ndarray]):
+        grid_y, grid_x = meshgrids
+        recon = scipy.interpolate.griddata(points, values, (grid_y, grid_x))
+        return recon
+
+    def reconstruct_idw(self, points: np.ndarray, values: np.ndarray, meshgrids: Tuple[np.ndarray, np.ndarray]):
+        grid_y, grid_x = meshgrids
+        n_neighbors = 4 if 'n_neighbors' not in self.options.keys() else self.options['n_neighbors']
+        knn_engine = NearestNeighbors(n_neighbors=n_neighbors)
+        knn_engine.fit(points)
+
+        # Find nearest measured points for each queried point.
+        queried_points = np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids))
+        nn_dists, nn_inds = knn_engine.kneighbors(queried_points)
+        nn_weights = self._compute_neighbor_weights(nn_dists)
+        nn_values = np.take(values, nn_inds)
+
+        recon = np.sum(nn_values * nn_weights, axis=1)
+        recon = recon.reshape(meshgrids[0].shape)
+        return recon
+
+    @staticmethod
+    def _compute_neighbor_weights(neighbor_distances, power=2, eps=1e-7):
+        """
+        Calculating the weights for how each neighboring data point contributes
+        to the reconstruction for the current location.
+
+        First, the weights are calculated to be inversely proportional to the distance from teh current point.
+        Next, the weights are normalized so that the total weight sums up to 1 for each reconstruction point.
+        """
+        unnormalized_weights = 1.0 / (np.power(neighbor_distances, power) + eps)
+        sum_over_row = np.sum(unnormalized_weights, axis=1, keepdims=True)
+        weights = unnormalized_weights / sum_over_row
+        return weights

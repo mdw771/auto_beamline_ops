@@ -19,6 +19,7 @@ import numpy as np
 
 from autobl.steering import configs
 from autobl.steering import measurement
+from autobl.image_proc import DenseReconstructor
 
 
 def run_simulation(image, scan_path, probe=None):
@@ -216,11 +217,11 @@ if __name__ == "__main__":
     parser.add_argument("--generate-gold", action="store_true")
     args = parser.parse_args()
 
-    def show_results(_measured_positions, _measured_values):
+    def show_results(measured_positions, measured_values):
         """Plot the results"""
-        image = tifffile.imread(os.path.join("data", "xrf", "xrf_2idd_Cs_L.tiff"))
-        grid_y, grid_x = np.mgrid[: image.shape[0], : image.shape[1]]
-        recon = griddata(_measured_positions, _measured_values, (grid_y, grid_x))
+        image = tifffile.imread(os.path.join('data', 'xrf', 'xrf_2idd_Cs_L.tiff'))
+        grid_y, grid_x = np.mgrid[:image.shape[0], :image.shape[1]]
+        recon = DenseReconstructor(method='linear').reconstruct(measured_positions, measured_values, (grid_y, grid_x))
 
         fig, axes = plt.subplots(1, 2)
         axes[0].imshow(image)

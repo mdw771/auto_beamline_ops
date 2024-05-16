@@ -84,4 +84,4 @@ analyzer_configs = ExperimentAnalyzerConfig(
 
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=10, n_target_measurements=70)
+experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
