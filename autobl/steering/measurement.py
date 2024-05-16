@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.interpolate
 import scipy.ndimage as ndi
+from scipy.spatial.distance import cdist
 
 import autobl.steering.configs as cfg
 from autobl import util
@@ -163,10 +164,13 @@ class FlyScanSingleValueSimulationMeasurement(Measurement):
         )
 
         # get the associated exposure number for each sample point
-        exposure_number = ((steps + self.configs.eps) // (
-            self.configs.setup_params.exposure_sec
-            + self.configs.setup_params.deadtime_sec
-        )).astype(int)
+        exposure_number = (
+            (steps + self.configs.eps)
+            // (
+                self.configs.setup_params.exposure_sec
+                + self.configs.setup_params.deadtime_sec
+            )
+        ).astype(int)
 
         # get positions for each exposure
         self.points_to_sample_all_exposures = []
@@ -413,9 +417,9 @@ class FlyScanPathGenerator:
         current_point = copy.deepcopy(np.array(pos_top_left))
         self.generated_path.append(copy.deepcopy(current_point))
         while True:
-            if current_side == 0:
+            if current_side == 0:  # left
                 current_point[1] = pos_bottom_right[1]
-            else:
+            else:  # right
                 current_point[1] = pos_top_left[1]
             current_side = 1 - current_side
             self.generated_path.append(copy.deepcopy(current_point))
@@ -491,3 +495,32 @@ def get_interpolated_values_from_image(
         mode="nearest",
     )
     return sampled_vals
+
+
+def idw(points: np.ndarray, values: np.ndarray, xi: np.ndarray) -> np.ndarray:
+    """Inverse distance weighted interpolation
+
+    Interpolate by weighting by inverse distance
+
+    :param points: np.ndarray. points to interpolate between, shape (num interp
+        points, dimension)
+    :param values: np.ndarray. values to interpolate between, shape (num interp
+        points,)
+    :param xi: np.ndarray. points to get interpolated values at, shape (num
+        sample points, dimension)
+    :return: np.ndarray. interpolated values, shape (num sample points,)
+    """
+    # Get inverse distances from sample points -> interp points
+    inv_distances = 1 / cdist(xi, points)
+    # Get sum of inverse distances for each sample
+    sum_inv_distances = np.sum(inv_distances, axis=1)
+    # For sample points == interp points...
+    mask = ~np.isfinite(inv_distances)
+    # ...set some values to 0.0...
+    inv_distances[~np.isfinite(sum_inv_distances), :] = 0.0
+    # ...but make sure the right values are non-zero
+    inv_distances[mask] = 1.0
+    sum_inv_distances[~np.isfinite(sum_inv_distances)] = 1.0
+    # Multiply values by inverse distances and divide by sum
+    vi = np.sum(values[np.newaxis, :] * inv_distances, axis=1) / sum_inv_distances
+    return vi
