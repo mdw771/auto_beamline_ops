@@ -81,8 +81,32 @@ class SimulatedScanningExperiment(ScanningExperiment):
         self.data_x_measured = torch.concatenate([self.data_x_measured, data_x])
         self.data_y_measured = torch.concatenate([self.data_y_measured, data_y])
 
-    def take_initial_measurements(self, n):
-        x_init = torch.linspace(self.data_x[0], self.data_x[-1], n).double().reshape(-1, 1)
+    def get_initial_measurement_locations(self, n, method='uniform'):
+        lb, ub = self.guide_configs.lower_bounds[0], self.guide_configs.upper_bounds[0]
+        if method == 'uniform':
+            x_init = torch.linspace(lb, ub, n).double().reshape(-1, 1)
+        elif method == 'random':
+            x_init = torch.rand(n) * (ub - lb) + lb
+            x_init = torch.sort(x_init).values
+            x_init = x_init.double().reshape(-1, 1)
+        elif method == 'spectral':
+            spacing_low = 2
+            spacing_high = 14
+            logging.info('Set value of number of initial measurements is disregarded because "spectral" is '
+                         'chosen as the method to generate initial measurement locations.')
+            x_init = torch.tensor([lb])
+            spacings = torch.arange(spacing_low, spacing_high + 0.1, 1.0)
+            while x_init[-1] <= ub:
+                x_init = torch.concatenate([x_init, x_init[-1] + torch.cumsum(spacings, dim=0)])
+            x_init = x_init[x_init <= ub]
+            x_init = x_init.double().reshape(-1, 1)
+            logging.info('Generated {} initial measurement locations.'.format(len(x_init)))
+        else:
+            raise ValueError('{} is not a valid method to generate initial locations.'.format(method))
+        return x_init
+
+    def take_initial_measurements(self, n, method='random'):
+        x_init = self.get_initial_measurement_locations(n, method=method)
         y_init = self.instrument.measure(x_init).reshape(-1, 1)
         self.n_pts_measured += n
         self.record_data(x_init, y_init)
@@ -162,8 +186,8 @@ class SimulatedScanningExperiment(ScanningExperiment):
         y_dat[inds_in_range] = y_in_range
         return y_dat
 
-    def run(self, n_initial_measurements=10, n_target_measurements=70):
-        x_init, y_init = self.take_initial_measurements(n_initial_measurements)
+    def run(self, n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform'):
+        x_init, y_init = self.take_initial_measurements(n_initial_measurements, method=initial_measurement_method)
         if self.select_scan_range:
             x_init, y_init = self.adjust_scan_range_and_init_data(x_init, y_init)
         self.initialize_guide(x_init, y_init)
