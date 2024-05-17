@@ -433,7 +433,9 @@ class XANESExperimentGuide(GPExperimentGuide):
         peak_width_normalized = peak_properties['widths'][max_peak_ind] / len(x)
 
         def weight_func(x):
-            m = sigmoid(x, r=20. / peak_width_normalized, d=peak_loc_normalized - 1.6 * peak_width_normalized)
+            r_ev = 3200
+            r = r_ev / (self.input_transform.bounds[1][0] - self.input_transform.bounds[0][0])
+            m = sigmoid(x, r=r / peak_width_normalized, d=peak_loc_normalized - 1.6 * peak_width_normalized)
             m = m + gaussian(
                 x,
                 a=self.config.acqf_weight_func_post_edge_gain,
