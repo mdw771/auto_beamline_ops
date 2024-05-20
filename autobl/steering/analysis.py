@@ -107,6 +107,8 @@ class ScanningExperimentAnalyzer(Analyzer):
         self.intermediate_data_dict = {
             'data_x': to_numpy(self.data_x),
             'data_y': to_numpy(self.data_y),
+            'measured_x_list': [],
+            'measured_y_list': [],
             'n_measured_list': [],
             'mu_list': [],
             'sigma_list': []
@@ -120,9 +122,12 @@ class ScanningExperimentAnalyzer(Analyzer):
         )
         mu = mu.squeeze()
         sigma = sigma.squeeze()
+        measured_x, measured_y = self.guide.untransform_data(x=self.guide.data_x, y=self.guide.data_y)
         self.intermediate_data_dict['n_measured_list'].append(self.n_pts_measured)
         self.intermediate_data_dict['mu_list'].append(to_numpy(mu))
         self.intermediate_data_dict['sigma_list'].append(to_numpy(sigma))
+        self.intermediate_data_dict['measured_x_list'].append(to_numpy(measured_x.squeeze()))
+        self.intermediate_data_dict['measured_y_list'].append(to_numpy(measured_y.squeeze()))
 
     @set_enabled
     def save_intermediate_data_dict(self):
