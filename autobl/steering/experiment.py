@@ -35,7 +35,8 @@ class ScanningExperiment(Experiment):
 
 class SimulatedScanningExperiment(ScanningExperiment):
 
-    def __init__(self, guide_configs, run_analysis=True, analyzer_configs=None,
+    def __init__(self, guide_configs, guide_class=autobl.steering.guide.XANESExperimentGuide,
+                 run_analysis=True, analyzer_configs=None,
                  auto_narrow_down_scan_range=False, narrow_down_range_bounds_ev=(-70, 90),
                  *args, **kwargs):
         super().__init__(guide_configs, *args, **kwargs)
@@ -53,6 +54,7 @@ class SimulatedScanningExperiment(ScanningExperiment):
         self.run_analysis = run_analysis
         self.select_scan_range = auto_narrow_down_scan_range
         self.range_bounds_ev = narrow_down_range_bounds_ev
+        self.guide_class = guide_class
 
     def build(self, true_data_x, true_data_y):
         self.build_instrument(true_data_x, true_data_y)
@@ -65,7 +67,7 @@ class SimulatedScanningExperiment(ScanningExperiment):
         self.data_y_truncated = self.data_y
 
     def initialize_guide(self, x_init, y_init):
-        self.guide = autobl.steering.guide.XANESExperimentGuide(self.guide_configs)
+        self.guide = self.guide_class(self.guide_configs)
         self.guide.build(x_init, y_init)
 
     def initialize_analyzer(self, analyzer_configs, n_target_measurements, n_initial_measurements):

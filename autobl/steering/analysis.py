@@ -8,6 +8,7 @@ import torch
 import gpytorch
 
 from autobl.util import *
+from autobl.steering.guide import *
 from autobl.steering.acquisition import *
 from autobl.steering.configs import *
 
@@ -164,27 +165,30 @@ class ScanningExperimentAnalyzer(Analyzer):
                    np.stack([self.n_measured_list, self.metric_list]))
 
     def get_save_name_prefix(self):
-        acquisition_info = self.guide_configs.acquisition_function_class.__name__
-        if self.guide_configs.acquisition_function_class in [GradientAwarePosteriorStandardDeviation,
-                                                       FittingResiduePosteriorStandardDeviation]:
-            acquisition_info += '_phi_{}'.format(self.guide.acquisition_function.phi)
-        if self.guide_configs.acquisition_function_class == ComprehensiveAugmentedAcquisitionFunction:
-            acquisition_info += '_gradOrder_{}_phiG_{}_phiR_{}'.format(self.guide.acquisition_function.gradient_order,
-                                                                       self.guide.acquisition_function.phi_g,
-                                                                       self.guide.acquisition_function.phi_r)
-            if self.guide.acquisition_function.gradient_order == 2:
-                acquisition_info += '_phiG2_{}'.format(self.guide.acquisition_function.phi_g2)
+        if isinstance(self.guide, GPExperimentGuide):
+            acquisition_info = self.guide_configs.acquisition_function_class.__name__
+            if self.guide_configs.acquisition_function_class in [GradientAwarePosteriorStandardDeviation,
+                                                           FittingResiduePosteriorStandardDeviation]:
+                acquisition_info += '_phi_{}'.format(self.guide.acquisition_function.phi)
+            if self.guide_configs.acquisition_function_class == ComprehensiveAugmentedAcquisitionFunction:
+                acquisition_info += '_gradOrder_{}_phiG_{}_phiR_{}'.format(self.guide.acquisition_function.gradient_order,
+                                                                           self.guide.acquisition_function.phi_g,
+                                                                           self.guide.acquisition_function.phi_r)
+                if self.guide.acquisition_function.gradient_order == 2:
+                    acquisition_info += '_phiG2_{}'.format(self.guide.acquisition_function.phi_g2)
 
-        kernel_info = '{}_lengthscale_{:.3f}'.format(self.guide.model.covar_module.__class__.__name__,
-                                                     self.guide.unscale_by_normalizer_bounds(
-                                                         self.guide.model.covar_module.lengthscale.item()
-                                                     ))
-        if isinstance(self.guide.model.covar_module, gpytorch.kernels.MaternKernel):
-            kernel_info += '_nu_{}'.format(self.guide.model.covar_module.nu)
+            kernel_info = '{}_lengthscale_{:.3f}'.format(self.guide.model.covar_module.__class__.__name__,
+                                                         self.guide.unscale_by_normalizer_bounds(
+                                                             self.guide.model.covar_module.lengthscale.item()
+                                                         ))
+            if isinstance(self.guide.model.covar_module, gpytorch.kernels.MaternKernel):
+                kernel_info += '_nu_{}'.format(self.guide.model.covar_module.nu)
 
-        optimizer_info = self.guide_configs.optimizer_class.__name__
+            optimizer_info = self.guide_configs.optimizer_class.__name__
 
-        save_name_prefix = '_'.join([self.name, acquisition_info, kernel_info, optimizer_info])
+            save_name_prefix = '_'.join([self.name, acquisition_info, kernel_info, optimizer_info])
+        else:
+            save_name_prefix = '_'.join([self.name, 'UnknownExperimentGuide'])
         return save_name_prefix
 
     def update_analysis(self):

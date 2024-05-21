@@ -55,87 +55,18 @@ class ExperimentGuide:
 
     def __init__(self, config, *args, **kwargs):
         self.config = config
-
-    def build(self, *args, **kwargs):
-        pass
-
-    def suggest(self):
-        pass
-
-    def update(self, *args, **kwargs):
-        pass
-
-
-class GPExperimentGuide(ExperimentGuide):
-
-    def __init__(self, config: GPExperimentGuideConfig, *args, **kwargs):
-        super().__init__(config, *args, **kwargs)
-        self.model = None
-        self.fitting_func = None
-        self.acquisition_function = None
-        self.optimizer = None
         self.data_x = torch.tensor([])
         self.data_y = torch.tensor([])
         self.input_transform = None
         self.outcome_transform = None
-        self.n_suggest_calls = 0
-        self.n_update_calls = 0
         self.stopping_criterion = StoppingCriterion(self.config.stopping_criterion_configs, self)
 
-    def build(self, x_train=None, y_train=None):
-        """
-        Build model, fit hyperparameters, and initialize other variables.
-
-        :param x_train: Optional[Tensor]. Features of the data for training the GP model and finding hyperparameters
-                        (e.g., kernel paraemters).
-        :param y_train: Optional[Tensor]. Observations of the data for training the GP model and finding hyperparameters
-                        (e.g., kernel paraemters).
-        """
-        self.build_counters()
+    def build(self, *args, **kwargs):
         self.build_transform()
-        self.build_model(x_train, y_train)
-        self.build_acquisition_function()
-        self.build_optimizer()
-
-    def build_counters(self):
-        self.n_suggest_calls = 0
-        self.n_update_calls = 0
 
     def build_transform(self):
         self.input_transform = Normalize(d=self.config.dim_measurement_space, bounds=self.get_bounds())
         self.outcome_transform = Standardize(m=self.config.dim_measurement_space)
-
-    def record_data(self, x, y):
-        self.data_x = torch.concatenate([self.data_x, x])
-        self.data_y = torch.concatenate([self.data_y, y])
-
-    def build_model(self, x_train, y_train):
-        x_train, y_train = self.transform_data(x_train, y_train, train_x=False, train_y=True)
-        self.train_model(x_train, y_train)
-        self.record_data(x_train, y_train)
-
-    def build_acquisition_function(self):
-        if issubclass(self.config.acquisition_function_class, botorch.acquisition.AnalyticAcquisitionFunction):
-            assert self.config.num_candidates == 1, ('Since an analytical acquisition function is used, '
-                                                     'num_candidates must be 1.')
-        additional_params = {}
-        if issubclass(self.config.acquisition_function_class, PosteriorStandardDeviationDerivedAcquisition):
-            additional_params['input_transform'] = self.input_transform
-
-        self.acquisition_function = self.config.acquisition_function_class(
-            self.model,
-            **additional_params,
-            **self.config.acquisition_function_params,
-            posterior_transform=botorch.acquisition.objective.UnstandardizePosteriorTransform(
-                Y_mean=self.outcome_transform.means[0], Y_std=self.outcome_transform.stdvs[0])
-        )
-
-    def build_optimizer(self):
-        self.optimizer = self.config.optimizer_class(
-            bounds=self.get_bounds(),
-            num_candidates=self.config.num_candidates,
-            **self.config.optimizer_params
-        )
 
     def get_bounds(self):
         lb = self.config.lower_bounds
@@ -151,40 +82,6 @@ class GPExperimentGuide(ExperimentGuide):
             ub = torch.tensor(ub)
         ub, _ = self.transform_data(ub)
         return torch.stack([lb, ub])
-
-    def scale_by_normalizer_bounds(self, x, dim=0):
-        """
-        Scale data by 1 / span_of_normalizer_bounds.
-
-        :param x: Any. The input data.
-        :param dim: int. Use the `dim`-th dimension of the normalizer bounds to calculate the scaling factor.
-                    If x has a shape of [n, ..., d] where d equals to the number of dimensions of the bounds,
-                    the scaling factors are calculated separately for each dimension and the `dim` argument is
-                    disregarded.
-        :return:
-        """
-        if isinstance(x, torch.Tensor) and x.ndim >= 2:
-            return x / (self.input_transform.bounds[1] - self.input_transform.bounds[0])
-        else:
-            s = self.input_transform.bounds[1][dim] - self.input_transform.bounds[0][dim]
-            return x / s
-
-    def unscale_by_normalizer_bounds(self, x, dim=0):
-        """
-        Scale data by span_of_normalizer_bounds.
-
-        :param x: Any. The input data.
-        :param dim: int. Use the `dim`-th dimension of the normalizer bounds to calculate the scaling factor.
-                    If x has a shape of [n, ..., d] where d equals to the number of dimensions of the bounds,
-                    the scaling factors are calculated separately for each dimension and the `dim` argument is
-                    disregarded.
-        :return:
-        """
-        if isinstance(x, torch.Tensor) and x.ndim >= 2:
-            return x * (self.input_transform.bounds[1] - self.input_transform.bounds[0])
-        else:
-            s = self.input_transform.bounds[1][dim] - self.input_transform.bounds[0][dim]
-            return x * s
 
     def transform_data(self, x=None, y=None, train_x=False, train_y=False):
         if x is not None:
@@ -219,6 +116,206 @@ class GPExperimentGuide(ExperimentGuide):
             self.outcome_transform.training = False
             y, _ = self.outcome_transform.untransform(y)
         return x, y
+
+    def record_data(self, x, y):
+        self.data_x = torch.concatenate([self.data_x, x])
+        self.data_y = torch.concatenate([self.data_y, y])
+
+    def suggest(self):
+        pass
+
+    def update(self, *args, **kwargs):
+        pass
+
+    def get_estimated_data_by_interpolation(self, x):
+        x_dat = to_numpy(self.data_x.squeeze())
+        y_dat = to_numpy(self.data_y.squeeze())
+        sorted_inds = np.argsort(x_dat)
+        x_dat = x_dat[sorted_inds]
+        y_dat = y_dat[sorted_inds]
+        x_interp = to_numpy(x.squeeze())
+        interpolator = scipy.interpolate.CubicSpline(x_dat, y_dat, extrapolate=True)
+        y_interp = interpolator(x_interp)
+        y = torch.tensor(y_interp.reshape(-1, 1), device=x.device)
+        return y
+
+
+class UniformSamplingExperimentGuide(ExperimentGuide):
+
+    def __init__(self, config: ExperimentGuideConfig, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        self.data_x = torch.tensor([])
+        self.data_y = torch.tensor([])
+        self.n_update_calls = 0
+        self.lb = self.config.lower_bounds[0]
+        self.ub = self.config.upper_bounds[0]
+
+    def build(self, x_train, y_train):
+        self.build_transform()
+        self.record_data(x_train, y_train)
+
+    def update(self, x_data, y_data, **kwargs):
+        self.n_update_calls += 1
+        self.record_data(x_data, y_data)
+
+    def suggest(self):
+        if self.n_update_calls == 0:
+            x = 0.0
+        elif self.n_update_calls == 1:
+            x = 1.0
+        elif self.n_update_calls == 2:
+            x = 0.5
+        else:
+            n = self.n_update_calls - 1
+            level = np.floor(np.log2(n))
+            spacing = 1.0 / (2 ** level)
+            offset = spacing / 2
+            n_pts_previous_levels = np.sum([2 ** l for l in range(int(level))])
+            pos = n - n_pts_previous_levels - 1
+            x = offset + pos * spacing
+        x = self.lb + (self.ub - self.lb) * x
+        x = torch.tensor([[x]], device=self.data_x.device)
+        return x
+
+    def untransform_data(self, x=None, y=None):
+        return x, y
+
+    def get_posterior_mean_and_std(self, x, **kwargs):
+        mu = self.get_estimated_data_by_interpolation(x)
+        return mu, torch.zeros_like(mu)
+
+    def plot_posterior(self, x, ax=None):
+        """
+        Plot the posterior mean and standard deviation of the GP model. Only works with 1-dimension feature space.
+
+        :param x: torch.Tensor[float, ...]. The points to plot.
+        """
+        if not isinstance(x, torch.Tensor):
+            x = to_tensor(x)
+        if x.ndim == 1:
+            x = x[:, None]
+        mu, sigma = self.get_posterior_mean_and_std(x)
+        mu = mu.reshape(-1).cpu().detach().numpy()
+        sigma = sigma.reshape(-1).cpu().detach().numpy()
+
+        if isinstance(x, torch.Tensor):
+            x = x.cpu().detach().numpy()
+        x = np.squeeze(x)
+        external_ax = True
+        if ax is None:
+            external_ax = False
+            fig, ax = plt.subplots(1, 2, figsize=(9, 4))
+        if not isinstance(ax, (list, tuple, np.ndarray)):
+            ax = [ax]
+        ax[0].plot(x, mu, label='Posterior mean', linewidth=0.5)
+        data_x, data_y = self.untransform_data(self.data_x, self.data_y)
+        ax[0].scatter(to_numpy(data_x.reshape(-1)), to_numpy(data_y.reshape(-1)), label='Measured data', s=4)
+        ax[0].set_title('Posterior mean and $+/-\sigma$ interval')
+        if external_ax:
+            return ax
+        else:
+            plt.show()
+
+
+class GPExperimentGuide(ExperimentGuide):
+
+    def __init__(self, config: GPExperimentGuideConfig, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        self.model = None
+        self.fitting_func = None
+        self.acquisition_function = None
+        self.optimizer = None
+        self.data_x = torch.tensor([])
+        self.data_y = torch.tensor([])
+        self.input_transform = None
+        self.outcome_transform = None
+        self.n_suggest_calls = 0
+        self.n_update_calls = 0
+
+    def build(self, x_train=None, y_train=None):
+        """
+        Build model, fit hyperparameters, and initialize other variables.
+
+        :param x_train: Optional[Tensor]. Features of the data for training the GP model and finding hyperparameters
+                        (e.g., kernel paraemters).
+        :param y_train: Optional[Tensor]. Observations of the data for training the GP model and finding hyperparameters
+                        (e.g., kernel paraemters).
+        """
+        self.build_counters()
+        self.build_transform()
+        self.build_model(x_train, y_train)
+        self.build_acquisition_function()
+        self.build_optimizer()
+
+    def build_counters(self):
+        self.n_suggest_calls = 0
+        self.n_update_calls = 0
+
+    def build_transform(self):
+        self.input_transform = Normalize(d=self.config.dim_measurement_space, bounds=self.get_bounds())
+        self.outcome_transform = Standardize(m=self.config.dim_measurement_space)
+
+    def build_model(self, x_train, y_train):
+        x_train, y_train = self.transform_data(x_train, y_train, train_x=False, train_y=True)
+        self.train_model(x_train, y_train)
+        self.record_data(x_train, y_train)
+
+    def build_acquisition_function(self):
+        if issubclass(self.config.acquisition_function_class, botorch.acquisition.AnalyticAcquisitionFunction):
+            assert self.config.num_candidates == 1, ('Since an analytical acquisition function is used, '
+                                                     'num_candidates must be 1.')
+        additional_params = {}
+        if issubclass(self.config.acquisition_function_class, PosteriorStandardDeviationDerivedAcquisition):
+            additional_params['input_transform'] = self.input_transform
+
+        self.acquisition_function = self.config.acquisition_function_class(
+            self.model,
+            **additional_params,
+            **self.config.acquisition_function_params,
+            posterior_transform=botorch.acquisition.objective.UnstandardizePosteriorTransform(
+                Y_mean=self.outcome_transform.means[0], Y_std=self.outcome_transform.stdvs[0])
+        )
+
+    def build_optimizer(self):
+        self.optimizer = self.config.optimizer_class(
+            bounds=self.get_bounds(),
+            num_candidates=self.config.num_candidates,
+            **self.config.optimizer_params
+        )
+
+    def scale_by_normalizer_bounds(self, x, dim=0):
+        """
+        Scale data by 1 / span_of_normalizer_bounds.
+
+        :param x: Any. The input data.
+        :param dim: int. Use the `dim`-th dimension of the normalizer bounds to calculate the scaling factor.
+                    If x has a shape of [n, ..., d] where d equals to the number of dimensions of the bounds,
+                    the scaling factors are calculated separately for each dimension and the `dim` argument is
+                    disregarded.
+        :return:
+        """
+        if isinstance(x, torch.Tensor) and x.ndim >= 2:
+            return x / (self.input_transform.bounds[1] - self.input_transform.bounds[0])
+        else:
+            s = self.input_transform.bounds[1][dim] - self.input_transform.bounds[0][dim]
+            return x / s
+
+    def unscale_by_normalizer_bounds(self, x, dim=0):
+        """
+        Scale data by span_of_normalizer_bounds.
+
+        :param x: Any. The input data.
+        :param dim: int. Use the `dim`-th dimension of the normalizer bounds to calculate the scaling factor.
+                    If x has a shape of [n, ..., d] where d equals to the number of dimensions of the bounds,
+                    the scaling factors are calculated separately for each dimension and the `dim` argument is
+                    disregarded.
+        :return:
+        """
+        if isinstance(x, torch.Tensor) and x.ndim >= 2:
+            return x * (self.input_transform.bounds[1] - self.input_transform.bounds[0])
+        else:
+            s = self.input_transform.bounds[1][dim] - self.input_transform.bounds[0][dim]
+            return x * s
 
     def untransform_posterior(self, posterior):
         posterior = self.outcome_transform.untransform_posterior(posterior)
@@ -393,18 +490,6 @@ class XANESExperimentGuide(GPExperimentGuide):
         if untransform:
             _, mu = self.untransform_data(x=None, y=mu)
         return mu, sigma
-
-    def get_estimated_data_by_interpolation(self, x):
-        x_dat = to_numpy(self.data_x.squeeze())
-        y_dat = to_numpy(self.data_y.squeeze())
-        sorted_inds = np.argsort(x_dat)
-        x_dat = x_dat[sorted_inds]
-        y_dat = y_dat[sorted_inds]
-        x_interp = to_numpy(x.squeeze())
-        interpolator = scipy.interpolate.CubicSpline(x_dat, y_dat, extrapolate=True)
-        y_interp = interpolator(x_interp)
-        y = torch.tensor(y_interp.reshape(-1, 1), device=x.device)
-        return y
 
     def build_acqf_weight_function(self, floor_value=0.1):
         """
