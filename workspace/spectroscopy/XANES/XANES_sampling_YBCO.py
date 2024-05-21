@@ -37,14 +37,14 @@ ref_spectra_0 = torch.tensor(data_all_spectra['YBCO_epara.0001'].to_numpy())
 ref_spectra_1 = torch.tensor(data_all_spectra['YBCO_eparc.0001'].to_numpy())
 energies = data_all_spectra['energy'].to_numpy()
 energies = torch.tensor(energies)
-y_fit = linear_fit([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)], data)
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(to_numpy(energies), data, label='data')
-ax.plot(to_numpy(energies), to_numpy(ref_spectra_0), label='ref1')
-ax.plot(to_numpy(energies), to_numpy(ref_spectra_1), label='ref2')
-ax.plot(to_numpy(energies), y_fit, label='fit', linestyle='--')
-plt.legend()
-plt.show()
+# y_fit = linear_fit([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)], data)
+# fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+# ax.plot(to_numpy(energies), data, label='data')
+# ax.plot(to_numpy(energies), to_numpy(ref_spectra_0), label='ref1')
+# ax.plot(to_numpy(energies), to_numpy(ref_spectra_1), label='ref2')
+# ax.plot(to_numpy(energies), y_fit, label='fit', linestyle='--')
+# plt.legend()
+# plt.show()
 
 ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
 ref_spectra_x = energies
@@ -72,10 +72,6 @@ configs = XANESExperimentGuideConfig(
                                  'debug': False
                                  },
 
-    # optimizer_class=ContinuousOptimizer,
-    # optimizer_params={'num_restarts': 2,}
-    #                   #'options': {'maxiter': 2}}
-
     optimizer_class=DiscreteOptimizer,
     optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete,
                       'optim_func_params': {
@@ -83,8 +79,6 @@ configs = XANESExperimentGuideConfig(
                       }
                      },
 
-    # optimizer_class=TorchOptimizer,
-    # optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 100}},
     n_updates_create_acqf_weight_func=5,
     acqf_weight_func_floor_value=0.01,
     acqf_weight_func_post_edge_gain=3.0,
@@ -96,10 +90,28 @@ configs = XANESExperimentGuideConfig(
 
 analyzer_configs = ExperimentAnalyzerConfig(
     name='YBCO3data',
-    output_dir='outputs',
+    output_dir='outputs/random_init',
     n_plot_interval=5
 )
 
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
 experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+
+
+if True:
+    set_random_seed(124)
+    configs.n_updates_create_acqf_weight_func = None
+    analyzer_configs.output_dir = 'outputs/random_init_no_reweighting'
+    experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
+    experiment.build(energies, data)
+    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+
+    set_random_seed(124)
+    configs.acquisition_function_class = PosteriorStandardDeviation
+    configs.acquisition_function_params = {}
+    configs.stopping_criterion_configs = None
+    analyzer_configs.output_dir = 'outputs/random_init_posterior_stddev'
+    experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
+    experiment.build(energies, data)
+    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')

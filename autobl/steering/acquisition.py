@@ -431,7 +431,19 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             ax[4].plot(x_squeezed, to_numpy(a.squeeze()), label='a')
             ax[4].legend(bbox_to_anchor=(1, 0.5))
             if self.weight_func is not None:
-                fig, ax = plt.subplots(1, 1, figsize=(3, 3))
-                ax.plot(x_squeezed, to_numpy(self.weight_func(x.squeeze())))
-                ax.set_title('Weight function')
+                import matplotlib
+                matplotlib.rc('font', family='Times New Roman')
+                matplotlib.rcParams['font.size'] = 14
+                matplotlib.rcParams['pdf.fonttype'] = 42
+                fig, ax = plt.subplots(1, 1, figsize=(5, 4))
+                ax.plot(self.input_transform.untransform(x).squeeze().detach(), mu.detach().squeeze(),
+                        label='Posterior mean', color='gray', linestyle='--')
+                ax.set_xlabel('Energy (eV)')
+                ax.set_ylabel('Posterior mean')
+                ax2 = ax.twinx()
+                ax2.plot(self.input_transform.untransform(x).squeeze().detach(), to_numpy(self.weight_func(x.squeeze())),
+                         label='Reweighting function')
+                ax2.set_ylabel('Reweighting function')
+                plt.legend(frameon=False)
+                plt.tight_layout()
             plt.show()

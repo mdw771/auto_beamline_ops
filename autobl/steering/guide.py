@@ -426,14 +426,16 @@ class XANESExperimentGuide(GPExperimentGuide):
 
         # convert 3 eV to pixel
         min_peak_width = float(3.0 / (self.input_transform.bounds[1][0] - self.input_transform.bounds[0][0]) * len(x))
-        peak_locs, peak_properties = scipy.signal.find_peaks(mu_grad, height=0.05, width=min_peak_width)
+        peak_locs, peak_properties = scipy.signal.find_peaks(mu_grad, height=0.01, width=min_peak_width)
         max_peak_ind = np.argmax(peak_properties['peak_heights'])
 
         peak_loc_normalized = float(peak_locs[max_peak_ind]) / len(x)
         peak_width_normalized = peak_properties['widths'][max_peak_ind] / len(x)
 
         def weight_func(x):
-            m = sigmoid(x, r=20. / peak_width_normalized, d=peak_loc_normalized - 1.6 * peak_width_normalized)
+            r_ev = 3200
+            r = r_ev / (self.input_transform.bounds[1][0] - self.input_transform.bounds[0][0])
+            m = sigmoid(x, r=r / peak_width_normalized, d=peak_loc_normalized - 1.6 * peak_width_normalized)
             m = m + gaussian(
                 x,
                 a=self.config.acqf_weight_func_post_edge_gain,
