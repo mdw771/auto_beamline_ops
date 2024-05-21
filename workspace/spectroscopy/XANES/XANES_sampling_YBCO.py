@@ -1,6 +1,7 @@
 import os
 import glob
 import pickle
+import sys
 
 import matplotlib.pyplot as plt
 import torch
@@ -14,6 +15,7 @@ from autobl.steering.measurement import *
 from autobl.steering.acquisition import *
 from autobl.steering.optimization import *
 from autobl.steering.experiment import SimulatedScanningExperiment
+from autobl.steering.guide import *
 from autobl.util import *
 
 torch.set_default_device('cpu')
@@ -67,7 +69,7 @@ configs = XANESExperimentGuideConfig(
                                  'phi_g': None, #2e-2,
                                  'phi_g2': None, #3e-4
                                  'beta': 0.999,
-                                 'gamma': 0.99,
+                                 'gamma': 0.95,
                                  'addon_term_lower_bound': 3e-2,
                                  'debug': False
                                  },
@@ -82,10 +84,13 @@ configs = XANESExperimentGuideConfig(
     n_updates_create_acqf_weight_func=5,
     acqf_weight_func_floor_value=0.01,
     acqf_weight_func_post_edge_gain=3.0,
+    acqf_weight_func_post_edge_offset=2.0,
+    acqf_weight_func_post_edge_width=1.0,
     stopping_criterion_configs=StoppingCriterionConfig(
         method='max_uncertainty',
         params={'threshold': 0.05}
-    )
+    ),
+    use_spline_interpolation_for_posterior_mean=True
 )
 
 analyzer_configs = ExperimentAnalyzerConfig(
@@ -100,6 +105,7 @@ experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_meas
 
 
 if True:
+    # No acquisition reweighting
     set_random_seed(124)
     configs.n_updates_create_acqf_weight_func = None
     analyzer_configs.output_dir = 'outputs/random_init_no_reweighting'
@@ -107,6 +113,7 @@ if True:
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
 
+    # Posterior standard deviation-only acquisition
     set_random_seed(124)
     configs.acquisition_function_class = PosteriorStandardDeviation
     configs.acquisition_function_params = {}
@@ -115,3 +122,14 @@ if True:
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+
+    # Uniform sampling
+    set_random_seed(124)
+    configs.n_updates_create_acqf_weight_func = None
+    configs.stopping_criterion_configs = None
+    analyzer_configs.output_dir = 'outputs/random_init_uniform_sampling'
+    experiment = SimulatedScanningExperiment(configs, guide_class=UniformSamplingExperimentGuide,
+                                             run_analysis=True, analyzer_configs=analyzer_configs)
+    experiment.build(energies, data)
+    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+

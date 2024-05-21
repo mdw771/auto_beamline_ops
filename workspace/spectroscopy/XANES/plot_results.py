@@ -68,18 +68,34 @@ class ResultAnalyzer:
         plt.tight_layout()
         plt.savefig(os.path.join(self.output_dir, output_filename), bbox_inches='tight')
 
-    def compare_estimates(self, file_list, labels, at_n_pts=20, output_filename='comparison_estimate.pdf'):
-        fig, ax = plt.subplots(1, 1)
+    def compare_estimates(self, file_list, labels, at_n_pts=20,
+                          zoom_in_range_x=None, zoom_in_range_y=None,
+                          output_filename='comparison_estimate.pdf'):
+        if zoom_in_range_x is None:
+            fig, ax = plt.subplots(1, 1, squeeze=False)
+        else:
+            fig, ax = plt.subplots(1, 2, squeeze=False, figsize=(10, 5))
         data = pickle.load(open(file_list[0], 'rb'))
         true_x, true_y = data['data_x'], data['data_y']
-        ax.plot(true_x, true_y, color='gray', alpha=0.5, label='Ground truth')
-        for i, f in enumerate(file_list):
-            data = pickle.load(open(f, 'rb'))
-            at_iter = data['n_measured_list'].index(at_n_pts)
-            x, y = data['data_x'], data['mu_list'][at_iter]
-            ax.plot(x, y, linewidth=1, label=labels[i])
-        ax.legend()
-        ax.set_xlabel('Energy (eV)')
+
+        def plot_ax(ax):
+            for i, f in enumerate(file_list):
+                data = pickle.load(open(f, 'rb'))
+                at_iter = data['n_measured_list'].index(at_n_pts)
+                x, y = data['data_x'], data['mu_list'][at_iter]
+                ax.plot(x, y, linewidth=1, label=labels[i])
+                if i == 0:
+                    ax.scatter(data['measured_x_list'][at_iter], data['measured_y_list'][at_iter], s=4)
+            ax.plot(true_x, true_y, color='gray', alpha=0.5, linestyle='--', label='Ground truth')
+            ax.legend()
+            ax.set_xlabel('Energy (eV)')
+
+        plot_ax(ax[0][0])
+        if zoom_in_range_x is not None:
+            plot_ax(ax[0][1])
+            ax[0][1].get_legend().set_visible(False)
+            ax[0][1].set_xlim(zoom_in_range_x)
+            ax[0][1].set_ylim(zoom_in_range_y)
         plt.tight_layout()
         plt.savefig(os.path.join(self.output_dir, output_filename), bbox_inches='tight')
 
@@ -91,12 +107,17 @@ if __name__ == '__main__':
     #          ]
     flist = [glob.glob('outputs/random_init/YBCO3data_*_intermediate_data.pkl')[0],
              glob.glob('outputs/random_init_no_reweighting/YBCO3data_*_intermediate_data.pkl')[0],
-             glob.glob('outputs/random_init_posterior_stddev/YBCO3data_*_intermediate_data.pkl')[0]
+             glob.glob('outputs/random_init_posterior_stddev/YBCO3data_*_intermediate_data.pkl')[0],
+             glob.glob('outputs/random_init_uniform_sampling/YBCO3data_*_intermediate_data.pkl')[0]
              ]
     labels = ['Comprehensive acquisition + acquisition reweighting',
               'Comprehensive acquisition',
-              'Posterior standard deviation only']
+              'Posterior standard deviation only',
+              'Uniform sampling'
+              ]
     analyzer = ResultAnalyzer(output_dir='factory')
     analyzer.compare_convergence(flist, labels, output_filename='YBCO_comparison_convergence.pdf')
     analyzer.plot_intermediate(flist[0], output_filename='YBCO_intermediate.pdf')
-    analyzer.compare_estimates(flist[0::2], labels[0::2], at_n_pts=30, output_filename='YBCO_intermediate_atNPts_30.pdf')
+    analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=32,
+                               zoom_in_range_x=(9000, 9050), zoom_in_range_y=(0.7, 1.4),
+                               output_filename='YBCO_intermediate_atNPts_32.pdf')
