@@ -195,6 +195,7 @@ class SimulatedScanningExperiment(ScanningExperiment):
         self.initialize_guide(x_init, y_init)
         self.initialize_analyzer(self.analyzer_configs, n_target_measurements, n_initial_measurements)
         self.analyzer.increment_n_points_measured(n_initial_measurements)
+        self.analyzer.update_analysis()
         # self.analyzer.plot_data(additional_x=x_init, additional_y=y_init)
 
         if n_target_measurements is None:

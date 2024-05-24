@@ -33,9 +33,10 @@ class ResultAnalyzer:
             rms_all_files.append(rms_list)
             n_pts_all_files.append(n_pts)
 
+        style_list = ['-', '-.', ':', (0, (3, 5, 1, 5, 1, 5))]
         fig, ax = plt.subplots(1, 1)
         for i in range(len(rms_all_files)):
-            ax.plot(n_pts_all_files[i], rms_all_files[i], label=labels[i])
+            ax.plot(n_pts_all_files[i], rms_all_files[i], linestyle=style_list[i % len(style_list)], label=labels[i])
         ax.set_xlabel('Points measured')
         ax.set_ylabel('RMS')
         plt.tight_layout()
@@ -46,7 +47,7 @@ class ResultAnalyzer:
     def plot_intermediate(self, filename, n_cols=3, interval=5, output_filename='intermediate.pdf'):
         data = pickle.load(open(filename, 'rb'))
         n = len(data['mu_list'])
-        n_plots = n // interval
+        n_plots = n // interval + 1
         n_rows = int(np.ceil(n_plots / n_cols))
         fig, ax = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3))
         i_plot = 0
@@ -77,13 +78,14 @@ class ResultAnalyzer:
             fig, ax = plt.subplots(1, 2, squeeze=False, figsize=(10, 5))
         data = pickle.load(open(file_list[0], 'rb'))
         true_x, true_y = data['data_x'], data['data_y']
+        style_list = ['-', '-.', ':', (0, (3, 5, 1, 5, 1, 5))]
 
         def plot_ax(ax):
             for i, f in enumerate(file_list):
                 data = pickle.load(open(f, 'rb'))
                 at_iter = data['n_measured_list'].index(at_n_pts)
                 x, y = data['data_x'], data['mu_list'][at_iter]
-                ax.plot(x, y, linewidth=1, label=labels[i])
+                ax.plot(x, y, linewidth=1, linestyle=style_list[i % len(style_list)], label=labels[i])
                 if i == 0:
                     ax.scatter(data['measured_x_list'][at_iter], data['measured_y_list'][at_iter], s=4)
             ax.plot(true_x, true_y, color='gray', alpha=0.5, linestyle='--', label='Ground truth')
@@ -117,7 +119,7 @@ if __name__ == '__main__':
               ]
     analyzer = ResultAnalyzer(output_dir='factory')
     analyzer.compare_convergence(flist, labels, output_filename='YBCO_comparison_convergence.pdf')
-    analyzer.plot_intermediate(flist[0], output_filename='YBCO_intermediate.pdf')
+    analyzer.plot_intermediate(flist[0], interval=6, output_filename='YBCO_intermediate.pdf')
     analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=32,
                                zoom_in_range_x=(9000, 9050), zoom_in_range_y=(0.7, 1.4),
                                output_filename='YBCO_intermediate_atNPts_32.pdf')
