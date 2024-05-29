@@ -207,7 +207,7 @@ class LTOGridTransferTester:
             plt.show()
         return mu
 
-    def build_point_grid(self):
+    def build_point_grid(self, spectrum_ind=None):
         if self.grid_generation_method == 'init':
             experiment = self.run_acquisition_for_spectrum_index(0)
             self.point_grid, _ = experiment.guide.untransform_data(x=experiment.guide.data_x)
@@ -223,6 +223,11 @@ class LTOGridTransferTester:
             logging.info('Numbers of points from all reference spectra: {}'.format([len(x) for x in ref_points]))
             logging.info('The merged grid has {} points.'.format(len(intersect_point_grid)))
             self.point_grid = torch.tensor(intersect_point_grid.reshape(-1, 1))
+        elif self.grid_generation_method == 'redo_for_each':
+            assert spectrum_ind is not None
+            experiment = self.run_acquisition_for_spectrum_index(spectrum_ind)
+            self.point_grid, _ = experiment.guide.untransform_data(x=experiment.guide.data_x)
+            self.point_grid = torch.sort(self.point_grid, dim=0).values
         else:
             raise ValueError('{} is invalid.'.format(self.grid_generation_method))
 
@@ -246,8 +251,11 @@ class LTOGridTransferTester:
         self.load_data()
 
     def run(self):
-        self.build_point_grid()
+        if self.grid_generation_method != 'redo_for_each':
+            self.build_point_grid()
         for ind in range(len(self.test_data_all_spectra)):
+            if self.grid_generation_method == 'redo_for_each':
+                self.build_point_grid(spectrum_ind=ind)
             data_interp = self.get_gp_interpolation_for_spectrum_index(ind)
             metric_val = rms(data_interp, self.test_data_all_spectra[ind])
             self.log_data(ind, metric_val)
@@ -269,6 +277,8 @@ class LTOGridTransferTester:
             true_spectrum = table['true_data'].to_numpy()
             metric_val = rms(estimated_spectrum, true_spectrum)
             rms_list.append(metric_val)
+
+        np.savetxt(os.path.join(self.output_dir, 'rms_all_test_spectra.txt'), rms_list)
 
         fig, ax = plt.subplots(1, 1)
         ax.plot(indices, rms_list)
@@ -319,6 +329,28 @@ class LTOGridTransferTester:
 
 
 if __name__ == '__main__':
+    tester = LTOGridTransferTester(
+        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
+        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
+        output_dir='outputs/grid_transfer/grid_redoForEach/Sample1_50C',
+        grid_generation_method='redo_for_each',
+        n_initial_measurements=10, n_target_measurements=40
+    )
+    tester.build()
+    tester.run()
+    tester.post_analyze()
+
+    tester = LTOGridTransferTester(
+        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
+        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
+        output_dir='outputs/grid_transfer/grid_redoForEach/Sample2_60C',
+        grid_generation_method='redo_for_each',
+        n_initial_measurements=10, n_target_measurements=40
+    )
+    tester.build()
+    tester.run()
+    tester.post_analyze()
+
     tester = LTOGridTransferTester(
         test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
         ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
