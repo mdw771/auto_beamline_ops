@@ -76,7 +76,7 @@ class ScanningExperimentAnalyzer(Analyzer):
 
     @set_enabled
     def create_intermediate_figure(self):
-        n_plots = int(np.ceil((self.n_target_measurements - self.n_init_measurements) / self.configs.n_plot_interval))
+        n_plots = int((self.n_target_measurements - self.n_init_measurements + 1) // self.configs.n_plot_interval + 1)
         n_cols = 3
         n_rows = int(np.ceil(n_plots / n_cols))
         self.fig_intermediate, self.ax_intermediate = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3),
