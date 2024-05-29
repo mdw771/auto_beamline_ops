@@ -3,6 +3,7 @@ import glob
 import pickle
 import re
 import logging
+import json
 
 import matplotlib.pyplot as plt
 import matplotlib
@@ -48,6 +49,20 @@ class LTOGridTransferTester:
         self.debug = False
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
+
+    def save_metadata(self):
+        d = {
+            'test_data_path': self.test_data_path,
+            'ref_spectra_data_path': self.ref_spectra_data_path,
+            'output_dir': self.output_dir,
+            'grid_generation_method': self.grid_generation_method,
+            'grid_generation_spectra_indices': self.grid_generation_spectra_indices,
+            'grid_intersect_tol': self.grid_intersect_tol,
+            'n_initial_measurements': self.n_initial_measurements,
+            'n_target_measurements': self.n_target_measurements
+        }
+        with open(os.path.join(self.output_dir, 'metadata.json'), 'w') as f:
+            json.dump(d, f, indent=4, separators=(',', ': '))
 
     @staticmethod
     def load_data_from_csv(path):
@@ -123,6 +138,7 @@ class LTOGridTransferTester:
                               }
                               },
             stopping_criterion_configs=None,
+            use_spline_interpolation_for_posterior_mean=True
         )
         return configs
 
@@ -223,6 +239,7 @@ class LTOGridTransferTester:
             logging.info('Numbers of points from all reference spectra: {}'.format([len(x) for x in ref_points]))
             logging.info('The merged grid has {} points.'.format(len(intersect_point_grid)))
             self.point_grid = torch.tensor(intersect_point_grid.reshape(-1, 1))
+            self.point_grid = torch.sort(self.point_grid, dim=0).values
         elif self.grid_generation_method == 'redo_for_each':
             assert spectrum_ind is not None
             experiment = self.run_acquisition_for_spectrum_index(spectrum_ind)
@@ -233,8 +250,8 @@ class LTOGridTransferTester:
 
     @staticmethod
     def find_intersects_with_tolerance(arr1, arr2, tol=1.0):
-        dist = np.abs(arr1.reshape(-1, 1) - arr2)
-        ind_in_1, _ = np.where(dist < tol)
+        dist = np.abs(arr1.reshape(-1, 1) - arr2).min(1)
+        ind_in_1 = np.where(dist < tol)
         return arr1[ind_in_1]
 
     def find_intersects_with_tolerance_multi_arrays(self, arrs, tol=1.0):
@@ -249,6 +266,7 @@ class LTOGridTransferTester:
 
     def build(self):
         self.load_data()
+        self.save_metadata()
 
     def run(self):
         if self.grid_generation_method != 'redo_for_each':
@@ -304,6 +322,11 @@ class LTOGridTransferTester:
             fitting_residue_estimated.append(r)
             p_true = self.get_phase_transition_percentage(true_spectrum)
             percentages_true.append(p_true)
+
+        table = pd.DataFrame(data={'indices': indices,
+                                   'percentages_estimated': percentages_estimated,
+                                   'percentages_true': percentages_true})
+        table.to_csv(os.path.join(self.output_dir, 'phase_transition_percentages.txt'), index=False)
 
         fig, ax = plt.subplots(1, 1)
         ax.plot(indices, percentages_estimated, label='Estimated')
@@ -379,7 +402,7 @@ if __name__ == '__main__':
         output_dir='outputs/grid_transfer/grid_selectedRef/Sample1_50C',
         grid_generation_method='ref',
         grid_generation_spectra_indices=(0, 5, 8, 12),
-        grid_intersect_tol=1.0,
+        grid_intersect_tol=3.0,
         n_initial_measurements=10, n_target_measurements=40
     )
     tester.build()
@@ -392,7 +415,7 @@ if __name__ == '__main__':
         output_dir='outputs/grid_transfer/grid_selectedRef/Sample2_60C',
         grid_generation_method='ref',
         grid_generation_spectra_indices=(0, 5, 8, 12),
-        grid_intersect_tol=1.0,
+        grid_intersect_tol=3.0,
         n_initial_measurements=10, n_target_measurements=40
     )
     tester.build()
