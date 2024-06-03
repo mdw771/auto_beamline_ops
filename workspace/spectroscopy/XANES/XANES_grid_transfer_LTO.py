@@ -137,7 +137,11 @@ class LTOGridTransferTester:
                                   'choices': torch.linspace(0, 1, 1000)[:, None]
                               }
                               },
-            stopping_criterion_configs=None,
+            stopping_criterion_configs=StoppingCriterionConfig(
+                method='max_uncertainty',
+                params={'threshold': 0.02},
+                n_updates_to_begin=6,
+            ),
             use_spline_interpolation_for_posterior_mean=True
         )
         return configs
@@ -326,7 +330,7 @@ class LTOGridTransferTester:
         table = pd.DataFrame(data={'indices': indices,
                                    'percentages_estimated': percentages_estimated,
                                    'percentages_true': percentages_true})
-        table.to_csv(os.path.join(self.output_dir, 'phase_transition_percentages.txt'), index=False)
+        table.to_csv(os.path.join(self.output_dir, 'phase_transition_percentages.csv'), index=False)
 
         fig, ax = plt.subplots(1, 1)
         ax.plot(indices, percentages_estimated, label='Estimated')
