@@ -8,6 +8,7 @@ import torch
 import gpytorch
 
 from autobl.util import *
+from autobl.steering.guide import *
 from autobl.steering.acquisition import *
 from autobl.steering.configs import *
 
@@ -75,7 +76,7 @@ class ScanningExperimentAnalyzer(Analyzer):
 
     @set_enabled
     def create_intermediate_figure(self):
-        n_plots = int(np.ceil((self.n_target_measurements - self.n_init_measurements) / self.configs.n_plot_interval))
+        n_plots = int((self.n_target_measurements - self.n_init_measurements + 1) // self.configs.n_plot_interval + 1)
         n_cols = 3
         n_rows = int(np.ceil(n_plots / n_cols))
         self.fig_intermediate, self.ax_intermediate = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3),
@@ -107,6 +108,8 @@ class ScanningExperimentAnalyzer(Analyzer):
         self.intermediate_data_dict = {
             'data_x': to_numpy(self.data_x),
             'data_y': to_numpy(self.data_y),
+            'measured_x_list': [],
+            'measured_y_list': [],
             'n_measured_list': [],
             'mu_list': [],
             'sigma_list': []
@@ -120,9 +123,12 @@ class ScanningExperimentAnalyzer(Analyzer):
         )
         mu = mu.squeeze()
         sigma = sigma.squeeze()
+        measured_x, measured_y = self.guide.untransform_data(x=self.guide.data_x, y=self.guide.data_y)
         self.intermediate_data_dict['n_measured_list'].append(self.n_pts_measured)
         self.intermediate_data_dict['mu_list'].append(to_numpy(mu))
         self.intermediate_data_dict['sigma_list'].append(to_numpy(sigma))
+        self.intermediate_data_dict['measured_x_list'].append(to_numpy(measured_x.squeeze()))
+        self.intermediate_data_dict['measured_y_list'].append(to_numpy(measured_y.squeeze()))
 
     @set_enabled
     def save_intermediate_data_dict(self):
@@ -159,27 +165,30 @@ class ScanningExperimentAnalyzer(Analyzer):
                    np.stack([self.n_measured_list, self.metric_list]))
 
     def get_save_name_prefix(self):
-        acquisition_info = self.guide_configs.acquisition_function_class.__name__
-        if self.guide_configs.acquisition_function_class in [GradientAwarePosteriorStandardDeviation,
-                                                       FittingResiduePosteriorStandardDeviation]:
-            acquisition_info += '_phi_{}'.format(self.guide.acquisition_function.phi)
-        if self.guide_configs.acquisition_function_class == ComprehensiveAugmentedAcquisitionFunction:
-            acquisition_info += '_gradOrder_{}_phiG_{}_phiR_{}'.format(self.guide.acquisition_function.gradient_order,
-                                                                       self.guide.acquisition_function.phi_g,
-                                                                       self.guide.acquisition_function.phi_r)
-            if self.guide.acquisition_function.gradient_order == 2:
-                acquisition_info += '_phiG2_{}'.format(self.guide.acquisition_function.phi_g2)
+        if isinstance(self.guide, GPExperimentGuide):
+            acquisition_info = self.guide_configs.acquisition_function_class.__name__
+            if self.guide_configs.acquisition_function_class in [GradientAwarePosteriorStandardDeviation,
+                                                           FittingResiduePosteriorStandardDeviation]:
+                acquisition_info += '_phi_{}'.format(self.guide.acquisition_function.phi)
+            if self.guide_configs.acquisition_function_class == ComprehensiveAugmentedAcquisitionFunction:
+                acquisition_info += '_gradOrder_{}_phiG_{}_phiR_{}'.format(self.guide.acquisition_function.gradient_order,
+                                                                           self.guide.acquisition_function.phi_g,
+                                                                           self.guide.acquisition_function.phi_r)
+                if self.guide.acquisition_function.gradient_order == 2:
+                    acquisition_info += '_phiG2_{}'.format(self.guide.acquisition_function.phi_g2)
 
-        kernel_info = '{}_lengthscale_{:.3f}'.format(self.guide.model.covar_module.__class__.__name__,
-                                                     self.guide.unscale_by_normalizer_bounds(
-                                                         self.guide.model.covar_module.lengthscale.item()
-                                                     ))
-        if isinstance(self.guide.model.covar_module, gpytorch.kernels.MaternKernel):
-            kernel_info += '_nu_{}'.format(self.guide.model.covar_module.nu)
+            kernel_info = '{}_lengthscale_{:.3f}'.format(self.guide.model.covar_module.__class__.__name__,
+                                                         self.guide.unscale_by_normalizer_bounds(
+                                                             self.guide.model.covar_module.lengthscale.item()
+                                                         ))
+            if isinstance(self.guide.model.covar_module, gpytorch.kernels.MaternKernel):
+                kernel_info += '_nu_{}'.format(self.guide.model.covar_module.nu)
 
-        optimizer_info = self.guide_configs.optimizer_class.__name__
+            optimizer_info = self.guide_configs.optimizer_class.__name__
 
-        save_name_prefix = '_'.join([self.name, acquisition_info, kernel_info, optimizer_info])
+            save_name_prefix = '_'.join([self.name, acquisition_info, kernel_info, optimizer_info])
+        else:
+            save_name_prefix = '_'.join([self.name, 'UnknownExperimentGuide'])
         return save_name_prefix
 
     def update_analysis(self):

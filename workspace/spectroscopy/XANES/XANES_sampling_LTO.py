@@ -56,10 +56,8 @@ configs = XANESExperimentGuideConfig(
     n_updates_create_acqf_weight_func=5,
     acqf_weight_func_floor_value=0.01,
     acqf_weight_func_post_edge_gain=3.0,
-    
-    # optimizer_class=ContinuousOptimizer,
-    # optimizer_params={'num_restarts': 2,}
-    #                   #'options': {'maxiter': 2}}
+    acqf_weight_func_post_edge_offset=2.0,
+    acqf_weight_func_post_edge_width=1.0,
     
     optimizer_class=DiscreteOptimizer,
     optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete,
@@ -68,20 +66,38 @@ configs = XANESExperimentGuideConfig(
                       }
                      },
     
-    # optimizer_class=TorchOptimizer,
-    # optimizer_params={'torch_optimizer': torch.optim.Adam, 'torch_optimizer_options': {'maxiter': 20}},
     stopping_criterion_configs=StoppingCriterionConfig(
         method='max_uncertainty',
         params={'threshold': 0.05}
-    )
+    ),
+    use_spline_interpolation_for_posterior_mean=True
 )
 
 analyzer_configs = ExperimentAnalyzerConfig(
     name='Sample1_50C_XANES',
-    output_dir='outputs',
+    output_dir='outputs/random_init',
     n_plot_interval=5
 )
 
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
 experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
+
+
+
+if True:
+    set_random_seed(124)
+    configs.n_updates_create_acqf_weight_func = None
+    analyzer_configs.output_dir = 'outputs/random_init_no_reweighting'
+    experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
+    experiment.build(energies, data)
+    experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
+
+    set_random_seed(124)
+    configs.acquisition_function_class = PosteriorStandardDeviation
+    configs.acquisition_function_params = {}
+    configs.stopping_criterion_configs = None
+    analyzer_configs.output_dir = 'outputs/random_init_posterior_stddev'
+    experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
+    experiment.build(energies, data)
+    experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')

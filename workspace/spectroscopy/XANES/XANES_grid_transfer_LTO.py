@@ -3,6 +3,7 @@ import glob
 import pickle
 import re
 import logging
+import json
 
 import matplotlib.pyplot as plt
 import matplotlib
@@ -48,6 +49,20 @@ class LTOGridTransferTester:
         self.debug = False
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
+
+    def save_metadata(self):
+        d = {
+            'test_data_path': self.test_data_path,
+            'ref_spectra_data_path': self.ref_spectra_data_path,
+            'output_dir': self.output_dir,
+            'grid_generation_method': self.grid_generation_method,
+            'grid_generation_spectra_indices': self.grid_generation_spectra_indices,
+            'grid_intersect_tol': self.grid_intersect_tol,
+            'n_initial_measurements': self.n_initial_measurements,
+            'n_target_measurements': self.n_target_measurements
+        }
+        with open(os.path.join(self.output_dir, 'metadata.json'), 'w') as f:
+            json.dump(d, f, indent=4, separators=(',', ': '))
 
     @staticmethod
     def load_data_from_csv(path):
@@ -122,7 +137,12 @@ class LTOGridTransferTester:
                                   'choices': torch.linspace(0, 1, 1000)[:, None]
                               }
                               },
-            stopping_criterion_configs=None,
+            stopping_criterion_configs=StoppingCriterionConfig(
+                method='max_uncertainty',
+                params={'threshold': 0.02},
+                n_updates_to_begin=6,
+            ),
+            use_spline_interpolation_for_posterior_mean=True
         )
         return configs
 
@@ -207,7 +227,7 @@ class LTOGridTransferTester:
             plt.show()
         return mu
 
-    def build_point_grid(self):
+    def build_point_grid(self, spectrum_ind=None):
         if self.grid_generation_method == 'init':
             experiment = self.run_acquisition_for_spectrum_index(0)
             self.point_grid, _ = experiment.guide.untransform_data(x=experiment.guide.data_x)
@@ -223,13 +243,19 @@ class LTOGridTransferTester:
             logging.info('Numbers of points from all reference spectra: {}'.format([len(x) for x in ref_points]))
             logging.info('The merged grid has {} points.'.format(len(intersect_point_grid)))
             self.point_grid = torch.tensor(intersect_point_grid.reshape(-1, 1))
+            self.point_grid = torch.sort(self.point_grid, dim=0).values
+        elif self.grid_generation_method == 'redo_for_each':
+            assert spectrum_ind is not None
+            experiment = self.run_acquisition_for_spectrum_index(spectrum_ind)
+            self.point_grid, _ = experiment.guide.untransform_data(x=experiment.guide.data_x)
+            self.point_grid = torch.sort(self.point_grid, dim=0).values
         else:
             raise ValueError('{} is invalid.'.format(self.grid_generation_method))
 
     @staticmethod
     def find_intersects_with_tolerance(arr1, arr2, tol=1.0):
-        dist = np.abs(arr1.reshape(-1, 1) - arr2)
-        ind_in_1, _ = np.where(dist < tol)
+        dist = np.abs(arr1.reshape(-1, 1) - arr2).min(1)
+        ind_in_1 = np.where(dist < tol)
         return arr1[ind_in_1]
 
     def find_intersects_with_tolerance_multi_arrays(self, arrs, tol=1.0):
@@ -244,10 +270,14 @@ class LTOGridTransferTester:
 
     def build(self):
         self.load_data()
+        self.save_metadata()
 
     def run(self):
-        self.build_point_grid()
+        if self.grid_generation_method != 'redo_for_each':
+            self.build_point_grid()
         for ind in range(len(self.test_data_all_spectra)):
+            if self.grid_generation_method == 'redo_for_each':
+                self.build_point_grid(spectrum_ind=ind)
             data_interp = self.get_gp_interpolation_for_spectrum_index(ind)
             metric_val = rms(data_interp, self.test_data_all_spectra[ind])
             self.log_data(ind, metric_val)
@@ -269,6 +299,8 @@ class LTOGridTransferTester:
             true_spectrum = table['true_data'].to_numpy()
             metric_val = rms(estimated_spectrum, true_spectrum)
             rms_list.append(metric_val)
+
+        np.savetxt(os.path.join(self.output_dir, 'rms_all_test_spectra.txt'), rms_list)
 
         fig, ax = plt.subplots(1, 1)
         ax.plot(indices, rms_list)
@@ -294,6 +326,11 @@ class LTOGridTransferTester:
             fitting_residue_estimated.append(r)
             p_true = self.get_phase_transition_percentage(true_spectrum)
             percentages_true.append(p_true)
+
+        table = pd.DataFrame(data={'indices': indices,
+                                   'percentages_estimated': percentages_estimated,
+                                   'percentages_true': percentages_true})
+        table.to_csv(os.path.join(self.output_dir, 'phase_transition_percentages.csv'), index=False)
 
         fig, ax = plt.subplots(1, 1)
         ax.plot(indices, percentages_estimated, label='Estimated')
@@ -322,6 +359,28 @@ if __name__ == '__main__':
     tester = LTOGridTransferTester(
         test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
         ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
+        output_dir='outputs/grid_transfer/grid_redoForEach/Sample1_50C',
+        grid_generation_method='redo_for_each',
+        n_initial_measurements=10, n_target_measurements=40
+    )
+    tester.build()
+    tester.run()
+    tester.post_analyze()
+
+    tester = LTOGridTransferTester(
+        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
+        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
+        output_dir='outputs/grid_transfer/grid_redoForEach/Sample2_60C',
+        grid_generation_method='redo_for_each',
+        n_initial_measurements=10, n_target_measurements=40
+    )
+    tester.build()
+    tester.run()
+    tester.post_analyze()
+
+    tester = LTOGridTransferTester(
+        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
+        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
         output_dir='outputs/grid_transfer/grid_initOfSelf/Sample1_50C',
         grid_generation_method='init',
         n_initial_measurements=10, n_target_measurements=40
@@ -347,7 +406,7 @@ if __name__ == '__main__':
         output_dir='outputs/grid_transfer/grid_selectedRef/Sample1_50C',
         grid_generation_method='ref',
         grid_generation_spectra_indices=(0, 5, 8, 12),
-        grid_intersect_tol=1.0,
+        grid_intersect_tol=3.0,
         n_initial_measurements=10, n_target_measurements=40
     )
     tester.build()
@@ -360,7 +419,7 @@ if __name__ == '__main__':
         output_dir='outputs/grid_transfer/grid_selectedRef/Sample2_60C',
         grid_generation_method='ref',
         grid_generation_spectra_indices=(0, 5, 8, 12),
-        grid_intersect_tol=1.0,
+        grid_intersect_tol=3.0,
         n_initial_measurements=10, n_target_measurements=40
     )
     tester.build()
