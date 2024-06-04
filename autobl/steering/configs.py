@@ -209,7 +209,10 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
     """
     When True, posterior mean will be estimated using the cubic spline interpolation of past measurements instead
     of being calculated using Gaussian process. This could avoid oscillation that occurs in flat regions when 
-    the lengthscale is too small.
+    the lengthscale is too small. Note that this only affects the final reconstructed data but does not affect
+    the posterior mean in acquisition function. To use interpolation also in acquisition function, choose
+    a subclass of `PosteriorStandardDeviationDerivedAcquisition`, and set `estimate_posterior_mean_by_interpolation`
+    to True in `acquisition_function_params`.
     """
 
 
