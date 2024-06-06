@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Callable
+from typing import Optional, Callable, Any, Tuple
 
 import botorch
 import matplotlib.pyplot as plt
@@ -23,6 +23,8 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
             beta: float = 0.95,
             gamma: float = 0.95,
             add_posterior_stddev: bool = True,
+            estimate_posterior_mean_by_interpolation: bool = False,
+            guide_obj=None,
             debug=False
     ) -> None:
         """
@@ -35,6 +37,8 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
         :param add_posterior_stddev: bool. If False, the posterior standard deviation will not be added
             to the returned value, and the acquisition function will be solely
             contributed by fitting residue.
+        :param guide_obj: Optional[GPExperimentGuide]. If posterior mean is to be estimated from spline interpolation,
+            this argument is required.
         """
         super().__init__(model, posterior_transform, maximize)
         self.input_transform = input_transform
@@ -46,6 +50,8 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
         self.beta = beta
         self.gamma = gamma
         self.intermediate_data = {}
+        self.guide_obj = guide_obj
+        self.estimate_posterior_mean_by_interpolation = estimate_posterior_mean_by_interpolation
 
     def set_weight_func(self, f: Callable):
         self.weight_func = f
@@ -59,6 +65,20 @@ class PosteriorStandardDeviationDerivedAcquisition(PosteriorStandardDeviation):
     def update_hyperparams_following_schedule(self):
         self.phi = self.phi * self.beta
         self.alpha = self.alpha * self.gamma
+
+    def _mean_and_sigma(
+        self, X: Tensor, compute_sigma: bool = True, min_var: float = 1e-12
+    ) -> Tuple[Tensor, Optional[Tensor]]:
+        if not self.estimate_posterior_mean_by_interpolation:
+            return super()._mean_and_sigma(X, compute_sigma, min_var)
+        else:
+            if compute_sigma:
+                _, sigma = super()._mean_and_sigma(X, True, min_var)
+            else:
+                sigma = None
+            mu, _ = self.guide_obj.get_posterior_mean_and_std(X, transform=False, untransform=True, compute_sigma=False)
+            mu = mu.squeeze(-1)
+            return mu, sigma
 
 
 class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerivedAcquisition):
@@ -78,6 +98,8 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerived
             reference_spectra_y: Tensor = None,
             phi: float = 0.1,
             add_posterior_stddev: bool = True,
+            estimate_posterior_mean_by_interpolation: bool = False,
+            guide_obj: Any = None,
             debug: bool = False
     ) -> None:
         """
@@ -93,7 +115,7 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerived
             contributed by fitting residue.
         """
         super().__init__(model, input_transform, posterior_transform, maximize, beta, gamma,
-                         add_posterior_stddev, debug)
+                         add_posterior_stddev, estimate_posterior_mean_by_interpolation, guide_obj, debug)
         self.reference_spectra_x = self.input_transform.transform(reference_spectra_x.reshape(-1, 1)).squeeze()
         self.reference_spectra_y = reference_spectra_y
         self.phi = phi
@@ -116,7 +138,7 @@ class FittingResiduePosteriorStandardDeviation(PosteriorStandardDeviationDerived
 
     @t_batch_mode_transform()
     def forward(self, x: Tensor, sigma_x=None, **kwargs) -> Tensor:
-        mu, _ = self._mean_and_sigma(self.reference_spectra_x)
+        mu, _ = self._mean_and_sigma(self.reference_spectra_x, compute_sigma=False)
         amat = self.reference_spectra_y.T
         bvec = mu.reshape(-1, 1)
         xvec = torch.matmul(torch.linalg.pinv(amat), bvec)
@@ -183,6 +205,8 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
             order: int = 1,
             finite_difference_interval: float = 1e-2,
             add_posterior_stddev: bool = True,
+            estimate_posterior_mean_by_interpolation: bool = False,
+            guide_obj: Any = None,
             debug: bool = False
     ) -> None:
         """
@@ -203,7 +227,7 @@ class GradientAwarePosteriorStandardDeviation(PosteriorStandardDeviationDerivedA
         :param add_posterior_stddev: bool. If True, posterior standard deviation is added to the function value.
         """
         super().__init__(model, input_transform, posterior_transform, maximize, beta, gamma,
-                         add_posterior_stddev, debug)
+                         add_posterior_stddev, estimate_posterior_mean_by_interpolation, guide_obj, debug)
         self.gradient_dims = gradient_dims
         self.phi = phi
         self.phi2 = phi2
@@ -324,6 +348,8 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             phi_r: float = 100,
             addon_term_lower_bound: float = 1e-2,
             add_posterior_stddev: bool = True,
+            estimate_posterior_mean_by_interpolation: bool = False,
+            guide_obj: Any = None,
             debug: bool = False
     ) -> None:
         """
@@ -339,7 +365,7 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             prevents the algorithm from exploring regions with high uncertainty yet low add-on term values.
         """
         super().__init__(model, input_transform, posterior_transform, maximize, beta, gamma,
-                         add_posterior_stddev, debug)
+                         add_posterior_stddev, estimate_posterior_mean_by_interpolation, guide_obj, debug)
         self.acqf_g = GradientAwarePosteriorStandardDeviation(
             model,
             input_transform=input_transform,
@@ -352,7 +378,9 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             order=gradient_order,
             phi=phi_g,
             phi2=phi_g2,
-            add_posterior_stddev=False
+            add_posterior_stddev=False,
+            estimate_posterior_mean_by_interpolation=estimate_posterior_mean_by_interpolation,
+            guide_obj=guide_obj,
         )
         self.acqf_r = FittingResiduePosteriorStandardDeviation(
             model,
@@ -365,6 +393,8 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
             reference_spectra_y=reference_spectra_y,
             phi=phi_r,
             add_posterior_stddev=False,
+            estimate_posterior_mean_by_interpolation=estimate_posterior_mean_by_interpolation,
+            guide_obj=guide_obj,
             debug=debug
         )
         self.gradient_order = gradient_order

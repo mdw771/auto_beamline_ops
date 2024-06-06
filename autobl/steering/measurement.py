@@ -69,6 +69,15 @@ class SimulatedMeasurement(Measurement):
             raise ValueError("f or data cannot both be None.")
 
 
+class XANESExperimentalMeasurement(Measurement):
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def measure(self, x, *args, **kwargs):
+        raise NotImplementedError
+
+
 class FlyScanSingleValueSimulationMeasurement(Measurement):
     """
     Fly scan simulator for techniques where each exposure measures only a single

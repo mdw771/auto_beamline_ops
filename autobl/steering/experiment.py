@@ -2,6 +2,7 @@ import os
 import glob
 import pickle
 import logging
+from typing import Type, Dict, Tuple, Optional
 
 import matplotlib.pyplot as plt
 import scipy.interpolate
@@ -27,57 +28,37 @@ class Experiment:
 
 class ScanningExperiment(Experiment):
 
-    def __init__(self, guide_configs, *args, **kwargs):
+    def __init__(self,
+                 guide_configs: GPExperimentGuideConfig,
+                 guide_class: Type[autobl.steering.guide.ExperimentGuide] = autobl.steering.guide.XANESExperimentGuide,
+                 measurement_class: Type[Measurement] = XANESExperimentalMeasurement,
+                 measurement_configs: Optional[Dict] = None,
+                 auto_narrow_down_scan_range: bool = False,
+                 narrow_down_range_bounds_ev: Tuple[float, float] = (-70, 90),
+                 *args, **kwargs):
         super().__init__()
         self.guide_configs = guide_configs
         self.candidate_list = []
-
-
-class SimulatedScanningExperiment(ScanningExperiment):
-
-    def __init__(self, guide_configs, guide_class=autobl.steering.guide.XANESExperimentGuide,
-                 run_analysis=True, analyzer_configs=None,
-                 auto_narrow_down_scan_range=False, narrow_down_range_bounds_ev=(-70, 90),
-                 *args, **kwargs):
-        super().__init__(guide_configs, *args, **kwargs)
-        self.data_x = None
-        self.data_y = None
-        self.data_x_truncated = None
-        self.data_y_truncated = None
         self.data_x_measured = torch.tensor([])
         self.data_y_measured = torch.tensor([])
         self.guide = None
         self.instrument = None
-        self.analyzer = None
-        self.analyzer_configs = analyzer_configs
         self.n_pts_measured = 0
-        self.run_analysis = run_analysis
         self.select_scan_range = auto_narrow_down_scan_range
         self.range_bounds_ev = narrow_down_range_bounds_ev
         self.guide_class = guide_class
+        self.measurement_class = measurement_class
+        self.measurement_configs = measurement_configs
 
-    def build(self, true_data_x, true_data_y):
-        self.build_instrument(true_data_x, true_data_y)
+    def build(self, *args, **kwargs):
+        self.build_instrument()
 
-    def build_instrument(self, true_data_x, true_data_y):
-        self.instrument = SimulatedMeasurement(data=(true_data_x[None, :], true_data_y))
-        self.data_x = true_data_x
-        self.data_y = true_data_y
-        self.data_x_truncated = self.data_x
-        self.data_y_truncated = self.data_y
+    def build_instrument(self, *args, **kwargs):
+        self.instrument = self.measurement_class(**self.measurement_configs)
 
     def initialize_guide(self, x_init, y_init):
         self.guide = self.guide_class(self.guide_configs)
         self.guide.build(x_init, y_init)
-
-    def initialize_analyzer(self, analyzer_configs, n_target_measurements, n_initial_measurements):
-        if analyzer_configs is None:
-            analyzer_configs = ExperimentAnalyzerConfig()
-        self.analyzer = ScanningExperimentAnalyzer(analyzer_configs, self.guide,
-                                                   self.data_x_truncated, self.data_y_truncated,
-                                                   n_target_measurements=n_target_measurements,
-                                                   n_init_measurements=n_initial_measurements)
-        self.analyzer.enable(self.run_analysis)
 
     def record_data(self, data_x, data_y):
         self.data_x_measured = torch.concatenate([self.data_x_measured, data_x])
@@ -132,23 +113,14 @@ class SimulatedScanningExperiment(ScanningExperiment):
         x_init = x_init[inds_keep]
         y_init = y_init[inds_keep]
         if 'reference_spectra_x' in self.guide_configs.acquisition_function_params.keys():
+            logging.info('Narrowing down reference spectra...')
             orig_x = self.guide_configs.acquisition_function_params['reference_spectra_x']
             inds_keep = torch.where((orig_x > new_range[0]) & (orig_x < new_range[1]))[0]
             self.guide_configs.acquisition_function_params['reference_spectra_x'] = (
                 self.guide_configs.acquisition_function_params)['reference_spectra_x'][inds_keep]
             self.guide_configs.acquisition_function_params['reference_spectra_y'] = (
                 self.guide_configs.acquisition_function_params)['reference_spectra_y'][:, inds_keep]
-
-        logging.info('Narrowing down reference spectra...')
-        inds_keep = torch.where((x_init > new_range[0]) & (x_init < new_range[1]))[0]
-        x_init = x_init[inds_keep]
-        y_init = y_init[inds_keep]
-
-        logging.info('Narrowing down true data...')
-        inds_keep = torch.where((self.data_x > new_range[0]) & (self.data_x < new_range[1]))[0]
-        self.data_x_truncated = self.data_x[inds_keep]
-        self.data_y_truncated = self.data_y[inds_keep]
-        return x_init, y_init
+        return x_init, y_init, new_range
 
     def get_measured_data(self, sort=True):
         x = self.data_x_measured
@@ -177,6 +149,8 @@ class SimulatedScanningExperiment(ScanningExperiment):
         # First, run cubic spline interpolation for all data
         x_dat = to_numpy(x.squeeze())
         x_measured, y_measured = self.get_measured_data(sort=True)
+        x_measured, unique_inds = np.unique(x_measured, return_index=True)
+        y_measured = y_measured[unique_inds]
         y_dat = scipy.interpolate.CubicSpline(to_numpy(x_measured.squeeze()), to_numpy(y_measured.squeeze()))(x_dat)
 
         # Second, get posterior mean (which may also be spline interpolated depending on setting) for points
@@ -188,10 +162,80 @@ class SimulatedScanningExperiment(ScanningExperiment):
         y_dat[inds_in_range] = y_in_range
         return y_dat
 
-    def run(self, n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform'):
-        x_init, y_init = self.take_initial_measurements(n_initial_measurements, method=initial_measurement_method)
+    def run(self, n_localization_measurements=0, n_initial_measurements=10, n_target_measurements=70,
+            initial_measurement_method='uniform'):
         if self.select_scan_range:
-            x_init, y_init = self.adjust_scan_range_and_init_data(x_init, y_init)
+            # Take a very coarse scan across the whole range to localize RoI and narrow down scan range.
+            assert n_localization_measurements > 0, ('auto_narrow_down_scan_range is True, but '
+                                                     'n_localization_measurements is 0.')
+            x_localize, y_localize = self.take_initial_measurements(n_localization_measurements, method='uniform')
+            x_localize, y_localize, _ = self.adjust_scan_range_and_init_data(x_localize, y_localize)
+        # Take initial measurement within the new range if it has been narrowed down.
+        x_init, y_init = self.take_initial_measurements(n_initial_measurements, method=initial_measurement_method)
+        self.initialize_guide(x_init, y_init)
+
+        if n_target_measurements is None:
+            n_target_measurements = n_initial_measurements * 7
+        for i in tqdm.trange(n_initial_measurements, n_target_measurements):
+            candidates = self.guide.suggest().double()
+            self.update_candidate_list(candidates)
+            y_new = self.instrument.measure(candidates).unsqueeze(-1)
+            self.guide.update(candidates, y_new)
+            self.n_pts_measured += len(candidates)
+            if self.guide.stopping_criterion.check():
+                break
+        self.record_data(*self.guide.untransform_data(self.guide.data_x[len(x_init):], self.guide.data_y[len(y_init):]))
+
+
+class SimulatedScanningExperiment(ScanningExperiment):
+
+    def __init__(self, *args, run_analysis=True, analyzer_configs=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.data_x = None
+        self.data_y = None
+        self.data_x_truncated = None
+        self.data_y_truncated = None
+        self.analyzer = None
+        self.analyzer_configs = analyzer_configs
+        self.run_analysis = run_analysis
+
+    def build(self, true_data_x, true_data_y):
+        self.build_instrument(true_data_x, true_data_y)
+
+    def build_instrument(self, true_data_x, true_data_y):
+        self.instrument = SimulatedMeasurement(data=(true_data_x[None, :], true_data_y))
+        self.data_x = true_data_x
+        self.data_y = true_data_y
+        self.data_x_truncated = self.data_x
+        self.data_y_truncated = self.data_y
+
+    def initialize_analyzer(self, analyzer_configs, n_target_measurements, n_initial_measurements):
+        if analyzer_configs is None:
+            analyzer_configs = ExperimentAnalyzerConfig()
+        self.analyzer = ScanningExperimentAnalyzer(analyzer_configs, self.guide,
+                                                   self.data_x_truncated, self.data_y_truncated,
+                                                   n_target_measurements=n_target_measurements,
+                                                   n_init_measurements=n_initial_measurements)
+        self.analyzer.enable(self.run_analysis)
+
+    def adjust_scan_range_and_init_data(self, x_init, y_init):
+        x_init, y_init, new_range = super().adjust_scan_range_and_init_data(x_init, y_init)
+        logging.info('Narrowing down true data...')
+        inds_keep = torch.where((self.data_x > new_range[0]) & (self.data_x < new_range[1]))[0]
+        self.data_x_truncated = self.data_x[inds_keep]
+        self.data_y_truncated = self.data_y[inds_keep]
+        return x_init, y_init, new_range
+
+    def run(self, n_localization_measurements=0, n_initial_measurements=10, n_target_measurements=70,
+            initial_measurement_method='uniform'):
+        if self.select_scan_range:
+            # Take a very coarse scan across the whole range to localize RoI and narrow down scan range.
+            assert n_localization_measurements > 0, ('auto_narrow_down_scan_range is True, but '
+                                                     'n_localization_measurements is 0.')
+            x_localize, y_localize = self.take_initial_measurements(n_localization_measurements, method='uniform')
+            x_localize, y_localize, _ = self.adjust_scan_range_and_init_data(x_localize, y_localize)
+        # Take initial measurement within the new range if it has been narrowed down.
+        x_init, y_init = self.take_initial_measurements(n_initial_measurements, method=initial_measurement_method)
         self.initialize_guide(x_init, y_init)
         self.initialize_analyzer(self.analyzer_configs, n_target_measurements, n_initial_measurements)
         self.analyzer.increment_n_points_measured(n_initial_measurements)

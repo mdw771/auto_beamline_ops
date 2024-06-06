@@ -130,6 +130,8 @@ class ExperimentGuide:
     def get_estimated_data_by_interpolation(self, x):
         x_dat = to_numpy(self.data_x.squeeze())
         y_dat = to_numpy(self.data_y.squeeze())
+        x_dat, unique_inds = np.unique(x_dat, return_index=True)
+        y_dat = y_dat[unique_inds]
         sorted_inds = np.argsort(x_dat)
         x_dat = x_dat[sorted_inds]
         y_dat = y_dat[sorted_inds]
@@ -267,6 +269,7 @@ class GPExperimentGuide(ExperimentGuide):
         additional_params = {}
         if issubclass(self.config.acquisition_function_class, PosteriorStandardDeviationDerivedAcquisition):
             additional_params['input_transform'] = self.input_transform
+            additional_params['guide_obj'] = self
 
         self.acquisition_function = self.config.acquisition_function_class(
             self.model,
@@ -376,7 +379,7 @@ class GPExperimentGuide(ExperimentGuide):
                 self.config.override_kernel_lengthscale,
                 self.scale_by_normalizer_bounds(self.config.override_kernel_lengthscale)))
 
-    def get_posterior_mean_and_std(self, x, transform=True, untransform=True, **kwargs):
+    def get_posterior_mean_and_std(self, x, transform=True, untransform=True, compute_sigma=True, **kwargs):
         if transform:
             x_transformed, _ = self.transform_data(x, None)
         else:
@@ -385,7 +388,10 @@ class GPExperimentGuide(ExperimentGuide):
         if untransform:
             posterior = self.untransform_posterior(posterior)
         mu = posterior.mean
-        sigma = posterior.variance.clamp_min(1e-12).sqrt()
+        if compute_sigma:
+            sigma = posterior.variance.clamp_min(1e-12).sqrt()
+        else:
+            sigma = None
         return mu, sigma
 
     def plot_posterior(self, x, ax=None):
@@ -465,7 +471,8 @@ class XANESExperimentGuide(GPExperimentGuide):
         if hasattr(self.acquisition_function, 'set_weight_func'):
             self.acquisition_function.set_weight_func(self.acqf_weight_func)
 
-    def get_posterior_mean_and_std(self, x, transform=True, untransform=True, use_spline_interpolation_for_mean=None):
+    def get_posterior_mean_and_std(self, x, transform=True, untransform=True, use_spline_interpolation_for_mean=None,
+                                   compute_sigma=True):
         """
         Get posterior mean and standard deviation.
 
@@ -480,8 +487,12 @@ class XANESExperimentGuide(GPExperimentGuide):
         if use_spline_interpolation_for_mean is None:
             use_spline_interpolation_for_mean = self.config.use_spline_interpolation_for_posterior_mean
         if not use_spline_interpolation_for_mean:
-            return super().get_posterior_mean_and_std(x, transform=transform, untransform=untransform)
-        _, sigma = super().get_posterior_mean_and_std(x, transform=transform, untransform=untransform)
+            return super().get_posterior_mean_and_std(x, transform=transform, untransform=untransform,
+                                                      compute_sigma=compute_sigma)
+        if compute_sigma:
+            _, sigma = super().get_posterior_mean_and_std(x, transform=transform, untransform=untransform)
+        else:
+            sigma = None
         if transform:
             x_transformed, _ = self.transform_data(x, None)
         else:
