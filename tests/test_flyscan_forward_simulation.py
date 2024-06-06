@@ -1,12 +1,13 @@
 """
 Tests for various flyscan measurements (raster scans and arbitrary paths)
 """
+
 import os
 import sys
 import argparse
 
 # Get the full path to the parent directory
-parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Add the parent directory to the system path
 sys.path.append(parent_dir)
@@ -170,7 +171,7 @@ def test_flyscan_forward_simulation_delta_probe_arbitrary_path(
     """
     build_dir()
     image = tifffile.imread(os.path.join("data", "xrf", "xrf_2idd_Cs_L.tiff"))
-    scan_path = [[0, 0], [10, 10], [50, 20], [55, 30], [55, 10], [100, 60]]
+    scan_path = [[0, 0], [10, 10], [50, 20], [55, 30], [55, 10], [100, 60], [100,100], [120, 100]]
     _measured_values, _measured_positions = run_simulation(image, scan_path, probe=None)
     if generate_gold:
         np.save(
@@ -219,14 +220,16 @@ if __name__ == "__main__":
 
     def show_results(measured_positions, measured_values):
         """Plot the results"""
-        image = tifffile.imread(os.path.join('data', 'xrf', 'xrf_2idd_Cs_L.tiff'))
-        grid_y, grid_x = np.mgrid[:image.shape[0], :image.shape[1]]
-        recon = DenseReconstructor(method='linear').reconstruct(measured_positions, measured_values, (grid_y, grid_x))
+        image = tifffile.imread(os.path.join("data", "xrf", "xrf_2idd_Cs_L.tiff"))
+        grid_y, grid_x = np.mgrid[: image.shape[0], : image.shape[1]]
+        reconstruction = DenseReconstructor(method="idw").reconstruct(
+            measured_positions, measured_values, (grid_y, grid_x)
+        )
 
         fig, axes = plt.subplots(1, 2)
         axes[0].imshow(image)
         axes[0].set_title("Original image")
-        axes[1].imshow(recon)
+        axes[1].imshow(reconstruction)
         axes[1].set_title("Sampled")
         plt.show()
         plt.close(fig)

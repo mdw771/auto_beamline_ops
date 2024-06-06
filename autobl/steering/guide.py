@@ -87,9 +87,9 @@ class GPExperimentGuide(ExperimentGuide):
         Build model, fit hyperparameters, and initialize other variables.
 
         :param x_train: Optional[Tensor]. Features of the data for training the GP model and finding hyperparameters
-                        (e.g., kernel paraemters).
+                        (e.g., kernel parameters).
         :param y_train: Optional[Tensor]. Observations of the data for training the GP model and finding hyperparameters
-                        (e.g., kernel paraemters).
+                        (e.g., kernel parameters).
         """
         self.build_counters()
         self.build_transform()
