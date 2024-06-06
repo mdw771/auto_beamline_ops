@@ -130,6 +130,8 @@ class ExperimentGuide:
     def get_estimated_data_by_interpolation(self, x):
         x_dat = to_numpy(self.data_x.squeeze())
         y_dat = to_numpy(self.data_y.squeeze())
+        x_dat, unique_inds = np.unique(x_dat, return_index=True)
+        y_dat = y_dat[unique_inds]
         sorted_inds = np.argsort(x_dat)
         x_dat = x_dat[sorted_inds]
         y_dat = y_dat[sorted_inds]
