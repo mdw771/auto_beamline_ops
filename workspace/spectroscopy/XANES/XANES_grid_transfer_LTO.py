@@ -308,42 +308,62 @@ class LTOGridTransferTester:
         ax.set_ylabel('RMS')
         plt.savefig(os.path.join(self.output_dir, 'rms_all_test_spectra.pdf'))
 
-    def analyze_phase_transition_percentages(self):
+    def calculate_phase_transition_percentages(self):
         indices = []
         percentages_estimated = []
         percentages_true = []
         fitting_residue_estimated = []
         flist = glob.glob(os.path.join(self.output_dir, 'estimated_data_ind_*.csv'))
         flist = np.array(flist)[np.argsort([int(re.findall('\d+', x)[-1]) for x in flist])]
+
+        ref_spectrum_fitting_estimated = np.stack([
+            pd.read_csv(flist[0], index_col=None)['estimated_data'].to_numpy(),
+            pd.read_csv(flist[-1], index_col=None)['estimated_data'].to_numpy(),
+        ])
+        ref_spectrum_fitting_true = np.stack([
+            pd.read_csv(flist[0], index_col=None)['true_data'].to_numpy(),
+            pd.read_csv(flist[-1], index_col=None)['true_data'].to_numpy(),
+        ])
+
         for f in flist:
             ind = int(re.findall('\d+', f)[-1])
             indices.append(ind)
             table = pd.read_csv(f, index_col=None)
             estimated_spectrum = table['estimated_data'].to_numpy()
             true_spectrum = table['true_data'].to_numpy()
-            p_estimated, r = self.get_phase_transition_percentage(estimated_spectrum, return_fitting_residue=True)
+            p_estimated, r = self.get_phase_transition_percentage(estimated_spectrum, ref_spectrum_fitting_estimated,
+                                                                  return_fitting_residue=True)
             percentages_estimated.append(p_estimated)
             fitting_residue_estimated.append(r)
-            p_true = self.get_phase_transition_percentage(true_spectrum)
+            p_true = self.get_phase_transition_percentage(true_spectrum, ref_spectrum_fitting_true)
             percentages_true.append(p_true)
 
         table = pd.DataFrame(data={'indices': indices,
                                    'percentages_estimated': percentages_estimated,
-                                   'percentages_true': percentages_true})
+                                   'percentages_true': percentages_true,
+                                   'fitting_residue_estimated': fitting_residue_estimated
+                                   })
+        return table
+
+    def analyze_phase_transition_percentages(self):
+        table = self.calculate_phase_transition_percentages()
         table.to_csv(os.path.join(self.output_dir, 'phase_transition_percentages.csv'), index=False)
 
         fig, ax = plt.subplots(1, 1)
-        ax.plot(indices, percentages_estimated, label='Estimated')
-        ax.plot(indices, percentages_true, label='True')
+        ax.plot(table['indices'], table['percentages_estimated'], label='Estimated')
+        ax.plot(table['indices'], table['percentages_true'], label='True')
         ax.legend()
         fig.savefig(os.path.join(self.output_dir, 'phase_transition_percentages.pdf'))
 
         fig, ax = plt.subplots(1, 1)
-        ax.plot(indices, fitting_residue_estimated)
+        ax.plot(table['indices'], table['fitting_residue_estimated'])
         fig.savefig(os.path.join(self.output_dir, 'fitting_residue.pdf'))
 
-    def get_phase_transition_percentage(self, data, return_fitting_residue=False):
-        amat = to_numpy(self.ref_spectra_y.T)
+    @staticmethod
+    def get_phase_transition_percentage(data, reference_spectra_for_fitting, return_fitting_residue=False, add_constant_term=False):
+        amat = to_numpy(reference_spectra_for_fitting).T
+        if add_constant_term:
+            amat = np.concatenate(amat, np.ones([amat.shape[0], 1]))
         bvec = data.reshape(-1, 1)
         xvec = np.matmul(np.linalg.pinv(amat), bvec)
         w = xvec.reshape(-1)
