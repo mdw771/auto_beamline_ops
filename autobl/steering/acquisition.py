@@ -416,7 +416,7 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
     def forward(self, x: Tensor) -> Tensor:
         mu, sigma = self._mean_and_sigma(x)
         if self.add_posterior_stddev:
-            # a = torch.clip(sigma, 0.4, None)#
+            # a = torch.clip(sigma, 1e-3, None)#
             a = sigma - sigma.min()
         else:
             a = 1.0
@@ -442,7 +442,7 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
         a = func_locals['a']
         x = func_locals['x']
         x_squeezed = to_numpy(x.squeeze())
-        if len(x) > 100:
+        if x.max() - x.min() > 0.99:
             fig, ax = plt.subplots(5, 1, figsize=(3, 12))
             ax[0].plot(x_squeezed, to_numpy(mu.squeeze()), label='mu')
             ax[0].fill_between(

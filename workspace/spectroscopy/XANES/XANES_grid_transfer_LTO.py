@@ -29,7 +29,7 @@ class LTOGridTransferTester:
 
     def __init__(self, test_data_path, ref_spectra_data_path, output_dir='outputs',
                  grid_generation_method='init', grid_generation_spectra_indices=(0,), grid_intersect_tol=1.0,
-                 n_initial_measurements=10, n_target_measurements=40):
+                 n_initial_measurements=10, n_target_measurements=40, initialization_method='uniform'):
         self.test_data_path = test_data_path
         self.ref_spectra_data_path = ref_spectra_data_path
         self.test_data_all_spectra = None
@@ -45,6 +45,7 @@ class LTOGridTransferTester:
         self.grid_intersect_tol = grid_intersect_tol
         self.n_initial_measurements = n_initial_measurements
         self.n_target_measurements = n_target_measurements
+        self.initialization_method = initialization_method
         self.save_plots = True
         self.debug = False
         if not os.path.exists(self.output_dir):
@@ -146,11 +147,11 @@ class LTOGridTransferTester:
         )
         return configs
 
-    def run_acquisition_for_spectrum_index(self, ind, dataset='test'):
+    def run_acquisition_for_spectrum_index(self, ind, name_prefix='LTO_50C', dataset='test'):
         configs = self.get_generic_config()
 
         analyzer_configs = ExperimentAnalyzerConfig(
-            name='LTO_50C_index_{}'.format(ind),
+            name='{}_index_{}'.format(name_prefix, ind),
             output_dir=self.output_dir,
             n_plot_interval=5,
             save=self.save_plots
@@ -167,7 +168,8 @@ class LTOGridTransferTester:
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(self.test_energies, data)
         experiment.run(n_initial_measurements=self.n_initial_measurements,
-                       n_target_measurements=self.n_target_measurements)
+                       n_target_measurements=self.n_target_measurements,
+                       initial_measurement_method=self.initialization_method)
         if self.save_plots and dataset == 'test':
             x_measured, y_measured = experiment.guide.untransform_data(x=experiment.guide.data_x,
                                                                        y=experiment.guide.data_y)
