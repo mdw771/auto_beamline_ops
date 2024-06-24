@@ -45,6 +45,7 @@ data = data_raw['norm'].to_numpy()
 ref_spectra_0 = torch.tensor(ref1['norm'].to_numpy())
 ref_spectra_1 = torch.tensor(ref2['norm'].to_numpy())
 energies = data_raw['e'].to_numpy()
+
 energies = torch.tensor(energies)
 # y_fit = linear_fit([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)], data)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
@@ -109,7 +110,7 @@ analyzer_configs = ExperimentAnalyzerConfig(
 
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+experiment.run(n_initial_measurements=20, n_target_measurements=60, initial_measurement_method='random')
 
 
 if True:

@@ -46,6 +46,7 @@ class LTOGridTransferTester:
         self.n_initial_measurements = n_initial_measurements
         self.n_target_measurements = n_target_measurements
         self.initialization_method = initialization_method
+        self.supplied_initial_points = None
         self.save_plots = True
         self.debug = False
         if not os.path.exists(self.output_dir):
@@ -82,6 +83,10 @@ class LTOGridTransferTester:
 
         if self.save_plots:
             self._plot_data()
+
+    def create_initial_points(self):
+        energies = to_numpy(self.test_energies).reshape(-1)
+        self.supplied_initial_points = np.random.rand(20) * (energies[-1] - energies[0]) + energies[0]
 
     def _plot_data(self):
         fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
@@ -169,7 +174,8 @@ class LTOGridTransferTester:
         experiment.build(self.test_energies, data)
         experiment.run(n_initial_measurements=self.n_initial_measurements,
                        n_target_measurements=self.n_target_measurements,
-                       initial_measurement_method=self.initialization_method)
+                       initial_measurement_method=self.initialization_method,
+                       supplied_initial_points=self.supplied_initial_points)
         if self.save_plots and dataset == 'test':
             x_measured, y_measured = experiment.guide.untransform_data(x=experiment.guide.data_x,
                                                                        y=experiment.guide.data_y)
@@ -272,6 +278,8 @@ class LTOGridTransferTester:
 
     def build(self):
         self.load_data()
+        if self.initialization_method == 'supplied':
+            self.create_initial_points()
         self.save_metadata()
 
     def run(self):

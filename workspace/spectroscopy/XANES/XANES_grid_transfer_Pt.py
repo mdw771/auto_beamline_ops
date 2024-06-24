@@ -128,7 +128,7 @@ if __name__ == '__main__':
         ref_spectra_data_path='data/raw/Pt-XANES',
         output_dir='outputs/grid_transfer_Pt/grid_redoForEach/Pt',
         grid_generation_method='redo_for_each',
-        n_initial_measurements=20, n_target_measurements=60, initialization_method='random'
+        n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
     )
     tester.build()
     tester.run()
@@ -139,7 +139,7 @@ if __name__ == '__main__':
         ref_spectra_data_path='data/raw/Pt-XANES',
         output_dir='outputs/grid_transfer_Pt/grid_initOfSelf/Pt',
         grid_generation_method='init',
-        n_initial_measurements=20, n_target_measurements=60, initialization_method='random'
+        n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
     )
     tester.build()
     tester.run()
@@ -152,7 +152,7 @@ if __name__ == '__main__':
         grid_generation_method='ref',
         grid_generation_spectra_indices=(0, 1),
         grid_intersect_tol=3.0,
-        n_initial_measurements=20, n_target_measurements=60, initialization_method='random'
+        n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
     )
     tester.build()
     tester.run()

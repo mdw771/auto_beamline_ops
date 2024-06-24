@@ -64,7 +64,7 @@ class ScanningExperiment(Experiment):
         self.data_x_measured = torch.concatenate([self.data_x_measured, data_x])
         self.data_y_measured = torch.concatenate([self.data_y_measured, data_y])
 
-    def get_initial_measurement_locations(self, n, method='uniform'):
+    def get_initial_measurement_locations(self, n, method='uniform', supplied_initial_points=None):
         lb, ub = self.guide_configs.lower_bounds[0], self.guide_configs.upper_bounds[0]
         if method == 'uniform':
             x_init = torch.linspace(lb, ub, n).double().reshape(-1, 1)
@@ -84,12 +84,14 @@ class ScanningExperiment(Experiment):
             x_init = x_init[x_init <= ub]
             x_init = x_init.double().reshape(-1, 1)
             logging.info('Generated {} initial measurement locations.'.format(len(x_init)))
+        elif method == 'supplied':
+            x_init = to_tensor(supplied_initial_points).reshape(-1, 1)
         else:
             raise ValueError('{} is not a valid method to generate initial locations.'.format(method))
         return x_init
 
-    def take_initial_measurements(self, n, method='random'):
-        x_init = self.get_initial_measurement_locations(n, method=method)
+    def take_initial_measurements(self, n, method='random', supplied_initial_points=None):
+        x_init = self.get_initial_measurement_locations(n, method=method, supplied_initial_points=supplied_initial_points)
         y_init = self.instrument.measure(x_init).reshape(-1, 1)
         self.n_pts_measured += n
         self.record_data(x_init, y_init)
@@ -163,7 +165,7 @@ class ScanningExperiment(Experiment):
         return y_dat
 
     def run(self, n_localization_measurements=0, n_initial_measurements=10, n_target_measurements=70,
-            initial_measurement_method='uniform'):
+            initial_measurement_method='uniform', supplied_initial_points=None):
         if self.select_scan_range:
             # Take a very coarse scan across the whole range to localize RoI and narrow down scan range.
             assert n_localization_measurements > 0, ('auto_narrow_down_scan_range is True, but '
@@ -171,7 +173,8 @@ class ScanningExperiment(Experiment):
             x_localize, y_localize = self.take_initial_measurements(n_localization_measurements, method='uniform')
             x_localize, y_localize, _ = self.adjust_scan_range_and_init_data(x_localize, y_localize)
         # Take initial measurement within the new range if it has been narrowed down.
-        x_init, y_init = self.take_initial_measurements(n_initial_measurements, method=initial_measurement_method)
+        x_init, y_init = self.take_initial_measurements(n_initial_measurements, method=initial_measurement_method,
+                                                        supplied_initial_points=supplied_initial_points)
         self.initialize_guide(x_init, y_init)
 
         if n_target_measurements is None:
@@ -227,7 +230,7 @@ class SimulatedScanningExperiment(ScanningExperiment):
         return x_init, y_init, new_range
 
     def run(self, n_localization_measurements=0, n_initial_measurements=10, n_target_measurements=70,
-            initial_measurement_method='uniform'):
+            initial_measurement_method='uniform', supplied_initial_points=None):
         if self.select_scan_range:
             # Take a very coarse scan across the whole range to localize RoI and narrow down scan range.
             assert n_localization_measurements > 0, ('auto_narrow_down_scan_range is True, but '
@@ -235,7 +238,8 @@ class SimulatedScanningExperiment(ScanningExperiment):
             x_localize, y_localize = self.take_initial_measurements(n_localization_measurements, method='uniform')
             x_localize, y_localize, _ = self.adjust_scan_range_and_init_data(x_localize, y_localize)
         # Take initial measurement within the new range if it has been narrowed down.
-        x_init, y_init = self.take_initial_measurements(n_initial_measurements, method=initial_measurement_method)
+        x_init, y_init = self.take_initial_measurements(n_initial_measurements, method=initial_measurement_method,
+                                                        supplied_initial_points=supplied_initial_points)
         self.initialize_guide(x_init, y_init)
         self.initialize_analyzer(self.analyzer_configs, n_target_measurements, n_initial_measurements)
         self.analyzer.increment_n_points_measured(n_initial_measurements)
