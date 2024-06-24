@@ -64,29 +64,32 @@ class DynamicExperimentResultAnalyzer:
                 ax.set_xlabel('Energy (eV)')
                 ax.set_ylabel('Spectrum index')
         elif plot_func == 'plot':
+            all_spectra = np.concatenate([tester.ref_data_all_spectra[0][None, :], tester.test_data_all_spectra, tester.ref_data_all_spectra[-1][None, :]])
             fig, ax = plt.subplots(figsize=(8, 5))
             for i in range(all_spectra.shape[0]):
                 lab = line_plot_labels[i] if line_plot_labels is not None else None
                 ax.plot(x, all_spectra[i], label=lab, linewidth=0.5)
             if line_plot_labels is not None:
-                ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), frameon=False)
+                ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), frameon=False, fontsize=10)
             ax.set_xlabel('Energy (eV)')
             ax.set_ylabel('Spectrum index')
         plt.tight_layout()
+        plt.grid()
         fig.savefig(os.path.join(self.output_dir, output_filename))
 
         # Beginning and end spectra
-        x, y = to_numpy(tester.test_energies.squeeze()), tester.test_data_all_spectra
-        fig, ax = plt.subplots(2, 1, figsize=(4, 4))
-        ax[0].plot(x, y[0])
-        ax[0].set_ylabel('Normalized absorption')
-        ax[0].grid()
-        ax[1].plot(x, y[-1])
-        ax[1].set_ylabel('Normalized absorption')
-        ax[1].set_xlabel('Energy (eV)')
-        ax[1].grid()
-        plt.tight_layout()
-        fig.savefig(os.path.join(self.output_dir, os.path.splitext(output_filename)[0] + '_spectra.pdf'))
+        for name, dset in (('spectra', tester.test_data_all_spectra), ('ref_spectra', tester.ref_data_all_spectra)):
+            x, y = to_numpy(tester.test_energies.squeeze()), dset
+            fig, ax = plt.subplots(2, 1, figsize=(4, 4))
+            ax[0].plot(x, y[0])
+            ax[0].set_ylabel('Normalized absorption')
+            ax[0].grid()
+            ax[1].plot(x, y[-1])
+            ax[1].set_ylabel('Normalized absorption')
+            ax[1].set_xlabel('Energy (eV)')
+            ax[1].grid()
+            plt.tight_layout()
+            fig.savefig(os.path.join(self.output_dir, os.path.splitext(output_filename)[0] + '_{}.pdf'.format(name)))
 
     def compare_rms_across_time(self, result_folders, labels, output_filename='comparison_rms_across_time.pdf'):
         fig, ax = plt.subplots(1, 1, figsize=(6, 2.5))
@@ -127,7 +130,8 @@ class DynamicExperimentResultAnalyzer:
                                    'percentages_true': percentages_true})
         return table
 
-    def compare_calculated_percentages(self, result_folders, labels, read_precalculated_percentage_data=True,
+    def compare_calculated_percentages(self, result_folders, labels, x_data=None, x_label='Spectrum index', 
+                                       read_precalculated_percentage_data=True,
                                        output_filename='comparison_calculated_percentages.pdf'):
         fig, ax = plt.subplots(1, 1, figsize=(6, 2.8))
         table = {}
@@ -139,9 +143,11 @@ class DynamicExperimentResultAnalyzer:
                 tester = self.tester_class(**metadata)
                 tester.load_data()
                 table = tester.calculate_phase_transition_percentages()
-            ax.plot(table['indices'], np.clip(table['percentages_estimated'] * 100, 0, 100), linestyle=self.style_list[i], label=labels[i])
-        ax.plot(table['indices'], np.clip(table['percentages_true'] * 100, 0, 100), linestyle='--', color='gray', label='Ground truth')
-        ax.set_xlabel('Spectrum index')
+            if x_data is None:
+                x_data = table['indices']
+            ax.plot(x_data, np.clip(table['percentages_estimated'] * 100, 0, 100), linestyle=self.style_list[i], label=labels[i])
+        ax.plot(x_data, np.clip(table['percentages_true'] * 100, 0, 100), linestyle='--', color='gray', label='Ground truth')
+        ax.set_xlabel(x_label)
         ax.set_ylabel('Phase transition percentage (%)')
         ax.grid()
         ax.legend()
@@ -198,11 +204,11 @@ if __name__ == '__main__':
     ]
 
     analyzer = DynamicExperimentResultAnalyzer(tester_class=PtGridTransferTester)
-    label_list = [int(re.findall('\d+', f)[-1]) for f in glob.glob('data/raw/Pt-XANES/*.nor')]
-    label_list.sort()
-    label_list = [str(x) + 'C' for x in label_list]
+    label_val_list = [int(re.findall('\d+', f)[-1]) for f in glob.glob('data/raw/Pt-XANES/*.nor')]
+    label_val_list.sort()
+    label_list = [str(x) + '$^\circ\!$C' for x in label_val_list]
     analyzer.plot_data(folders[0], transpose=True, plot_func='plot', line_plot_labels=label_list, output_filename='Pt_grid_transfer_test_data.pdf')
     analyzer.compare_rms_across_time(folders, labels, output_filename='Pt_grid_transfer_comparison_rms_across_time.pdf')
-    analyzer.compare_calculated_percentages(folders, labels, read_precalculated_percentage_data=False, output_filename='Pt_grid_transfer_comparison_calculated_percentages.pdf')
-    # analyzer.plot_spectrum(folders, labels, 80, output_filename='Pt_grid_transfer_estimated_spectra_80.pdf')
-    # analyzer.plot_spectrum(folders, labels, 90, output_filename='Pt_grid_transfer_estimated_spectra_90.pdf')
+    analyzer.compare_calculated_percentages(folders, labels, x_data=label_val_list[1:-1], x_label='Temperature ($\!^\circ\!$C)', read_precalculated_percentage_data=False, output_filename='Pt_grid_transfer_comparison_calculated_percentages.pdf')
+    # analyzer.plot_spectrum(folders, labels, 0, output_filename='Pt_grid_transfer_estimated_spectra_0.pdf')
+    # analyzer.plot_spectrum(folders, labels, 21, output_filename='Pt_grid_transfer_estimated_spectra_21.pdf')

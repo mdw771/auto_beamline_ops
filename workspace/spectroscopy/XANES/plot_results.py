@@ -203,7 +203,7 @@ if __name__ == '__main__':
     analyzer = ResultAnalyzer(output_dir='factory')
     # analyzer.plot_intermediate(flist[0], interval=1, make_animation=True, output_filename='Pt_intermediate_animation.mp4')
     # analyzer.plot_intermediate(flist[3], interval=1, make_animation=True, output_filename='Pt_intermediate_uniform_sampling_animation.mp4')
-    analyzer.compare_convergence(flist, labels, add_legend=False, output_filename='Pt_comparison_convergence.pdf')
+    analyzer.compare_convergence(flist, labels, ref_line_y=0.007, add_legend=False, output_filename='Pt_comparison_convergence.pdf')
     analyzer.plot_intermediate(flist[0], interval=5, output_filename='Pt_intermediate.pdf')
     analyzer.compare_intermediate(flist, labels, interval=5, n_cols=2, add_legend=False, output_filename='Pt_comparison_intermediate.pdf')
     analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=32,
