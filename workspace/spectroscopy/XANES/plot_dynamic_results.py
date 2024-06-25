@@ -75,8 +75,8 @@ class DynamicExperimentResultAnalyzer:
                 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), frameon=False, fontsize=10)
             ax.set_xlabel('Energy (eV)')
             ax.set_ylabel('Spectrum index')
+            plt.grid()
         plt.tight_layout()
-        plt.grid()
         fig.savefig(os.path.join(self.output_dir, output_filename))
 
         # Beginning and end spectra
