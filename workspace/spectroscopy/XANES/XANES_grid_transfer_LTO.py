@@ -22,8 +22,6 @@ from autobl.util import *
 
 torch.set_default_device('cpu')
 
-set_random_seed(123)
-
 
 class LTOGridTransferTester:
 
@@ -86,7 +84,7 @@ class LTOGridTransferTester:
 
     def create_initial_points(self):
         energies = to_numpy(self.test_energies).reshape(-1)
-        self.supplied_initial_points = np.random.rand(20) * (energies[-1] - energies[0]) + energies[0]
+        self.supplied_initial_points = np.random.rand(self.n_initial_measurements) * (energies[-1] - energies[0]) + energies[0]
 
     def _plot_data(self):
         fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
@@ -145,10 +143,10 @@ class LTOGridTransferTester:
                               },
             stopping_criterion_configs=StoppingCriterionConfig(
                 method='max_uncertainty',
-                params={'threshold': 0.02},
+                params={'threshold': 0.01},
                 n_updates_to_begin=6,
             ),
-            use_spline_interpolation_for_posterior_mean=True
+            use_spline_interpolation_for_posterior_mean=False
         )
         return configs
 
@@ -386,72 +384,78 @@ class LTOGridTransferTester:
 
 
 if __name__ == '__main__':
+    set_random_seed(164)
+    
     tester = LTOGridTransferTester(
         test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
         ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_redoForEach/Sample1_50C',
+        output_dir='outputs/grid_transfer_LTO/grid_redoForEach/Sample1_50C',
         grid_generation_method='redo_for_each',
-        n_initial_measurements=10, n_target_measurements=40
+        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
     )
     tester.build()
     tester.run()
     tester.post_analyze()
 
-    tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_redoForEach/Sample2_60C',
-        grid_generation_method='redo_for_each',
-        n_initial_measurements=10, n_target_measurements=40
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze()
-
-    tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_initOfSelf/Sample1_50C',
-        grid_generation_method='init',
-        n_initial_measurements=10, n_target_measurements=40
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze()
-
-    tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_initOfSelf/Sample2_60C',
-        grid_generation_method='init',
-        n_initial_measurements=10, n_target_measurements=40
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze()
+    # tester = LTOGridTransferTester(
+    #     test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
+    #     ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
+    #     output_dir='outputs/grid_transfer_LTO/grid_redoForEach/Sample2_60C',
+    #     grid_generation_method='redo_for_each',
+    #     n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
+    # )
+    # tester.build()
+    # tester.run()
+    # tester.post_analyze()
+    
+    set_random_seed(1634)
 
     tester = LTOGridTransferTester(
         test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
         ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_selectedRef/Sample1_50C',
+        output_dir='outputs/grid_transfer_LTO/grid_initOfSelf/Sample1_50C',
+        grid_generation_method='init',
+        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
+    )
+    tester.build()
+    tester.run()
+    tester.post_analyze()
+
+    # tester = LTOGridTransferTester(
+    #     test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
+    #     ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
+    #     output_dir='outputs/grid_transfer_LTO/grid_initOfSelf/Sample2_60C',
+    #     grid_generation_method='init',
+    #     n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
+    # )
+    # tester.build()
+    # tester.run()
+    # tester.post_analyze()
+    
+    set_random_seed(134)
+
+    tester = LTOGridTransferTester(
+        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
+        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
+        output_dir='outputs/grid_transfer_LTO/grid_selectedRef/Sample1_50C',
         grid_generation_method='ref',
         grid_generation_spectra_indices=(0, 5, 8, 12),
         grid_intersect_tol=3.0,
-        n_initial_measurements=10, n_target_measurements=40
+        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
     )
     tester.build()
     tester.run()
     tester.post_analyze()
 
-    tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_selectedRef/Sample2_60C',
-        grid_generation_method='ref',
-        grid_generation_spectra_indices=(0, 5, 8, 12),
-        grid_intersect_tol=3.0,
-        n_initial_measurements=10, n_target_measurements=40
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze()
+    # tester = LTOGridTransferTester(
+    #     test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
+    #     ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
+    #     output_dir='outputs/grid_transfer_LTO/grid_selectedRef/Sample2_60C',
+    #     grid_generation_method='ref',
+    #     grid_generation_spectra_indices=(0, 5, 8, 12),
+    #     grid_intersect_tol=3.0,
+    #     n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
+    # )
+    # tester.build()
+    # tester.run()
+    # tester.post_analyze()
