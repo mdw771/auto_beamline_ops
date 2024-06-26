@@ -41,9 +41,9 @@ def linear_fit(basis_list, data):
     y_fit = (a @ x).reshape(-1)
     return y_fit
 
-data = data_raw['norm'].to_numpy()
-ref_spectra_0 = torch.tensor(ref1['norm'].to_numpy())
-ref_spectra_1 = torch.tensor(ref2['norm'].to_numpy())
+data = data_raw['flat'].to_numpy()
+ref_spectra_0 = torch.tensor(ref1['flat'].to_numpy())
+ref_spectra_1 = torch.tensor(ref2['flat'].to_numpy())
 energies = data_raw['e'].to_numpy()
 
 energies = torch.tensor(energies)
@@ -80,7 +80,7 @@ configs = XANESExperimentGuideConfig(
                                  'gamma': 0.95,
                                  'addon_term_lower_bound': 3e-2,
                                  'estimate_posterior_mean_by_interpolation': False,
-                                 'debug': True
+                                 'debug': False
                                  },
 
     optimizer_class=DiscreteOptimizer,
@@ -103,7 +103,7 @@ configs = XANESExperimentGuideConfig(
 )
 
 analyzer_configs = ExperimentAnalyzerConfig(
-    name='Pt',
+    name='Pt_flat',
     output_dir='outputs/random_init',
     n_plot_interval=5
 )

@@ -36,7 +36,7 @@ class PtGridTransferTester(LTOGridTransferTester):
     @staticmethod
     def load_data_from_nor(path):
         table = read_nor(path)
-        data = table['norm'].to_numpy()
+        data = table['flat'].to_numpy()
         energies = table['e'].to_numpy()
         _, unique_inds = np.unique(energies, return_index=True)
         unique_inds = np.sort(unique_inds)
@@ -126,7 +126,7 @@ if __name__ == '__main__':
     tester = PtGridTransferTester(
         test_data_path='data/raw/Pt-XANES',
         ref_spectra_data_path='data/raw/Pt-XANES',
-        output_dir='outputs/grid_transfer_Pt/grid_redoForEach/Pt',
+        output_dir='outputs/grid_transfer_Pt_flat/grid_redoForEach/Pt',
         grid_generation_method='redo_for_each',
         n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
     )
@@ -137,7 +137,7 @@ if __name__ == '__main__':
     tester = PtGridTransferTester(
         test_data_path='data/raw/Pt-XANES',
         ref_spectra_data_path='data/raw/Pt-XANES',
-        output_dir='outputs/grid_transfer_Pt/grid_initOfSelf/Pt',
+        output_dir='outputs/grid_transfer_Pt_flat/grid_initOfSelf/Pt',
         grid_generation_method='init',
         n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
     )
@@ -148,7 +148,7 @@ if __name__ == '__main__':
     tester = PtGridTransferTester(
         test_data_path='data/raw/Pt-XANES',
         ref_spectra_data_path='data/raw/Pt-XANES',
-        output_dir='outputs/grid_transfer_Pt/grid_selectedRef/Pt',
+        output_dir='outputs/grid_transfer_Pt_flat/grid_selectedRef/Pt',
         grid_generation_method='ref',
         grid_generation_spectra_indices=(0, 1),
         grid_intersect_tol=3.0,

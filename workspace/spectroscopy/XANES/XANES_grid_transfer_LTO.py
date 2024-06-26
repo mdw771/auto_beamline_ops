@@ -408,6 +408,8 @@ if __name__ == '__main__':
     # tester.run()
     # tester.post_analyze()
     
+    # ----------------------------------------------
+    
     set_random_seed(1634)
 
     tester = LTOGridTransferTester(
@@ -431,6 +433,8 @@ if __name__ == '__main__':
     # tester.build()
     # tester.run()
     # tester.post_analyze()
+    
+    # ----------------------------------------------
     
     set_random_seed(134)
 

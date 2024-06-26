@@ -22,7 +22,8 @@ class ResultAnalyzer:
         matplotlib.rcParams['font.size'] = 14
         matplotlib.rcParams['pdf.fonttype'] = 42
 
-    def compare_convergence(self, file_list, labels, ref_line_y=0.005, add_legend=True, output_filename='comparison_convergence.pdf', figsize=None):
+    def compare_convergence(self, file_list, labels, ref_line_y=0.005, add_legend=True, output_filename='comparison_convergence.pdf', figsize=None,
+                            auc_range=None):
         rms_all_files = []
         n_pts_all_files = []
         for f in file_list:
@@ -37,6 +38,7 @@ class ResultAnalyzer:
             rms_all_files.append(rms_list)
             n_pts_all_files.append(n_pts)
 
+        # RMS convergence curve
         fig, ax = plt.subplots(1, 1, figsize=figsize)
         for i in range(len(rms_all_files)):
             ax.plot(n_pts_all_files[i], rms_all_files[i], linestyle=self.style_list[i % len(self.style_list)], label=labels[i])
@@ -55,6 +57,20 @@ class ResultAnalyzer:
             ax.legend(loc='upper right', frameon=True, ncol=1, fontsize=16)
         ax.grid(True)
         plt.savefig(os.path.join(self.output_dir, output_filename), bbox_inches='tight')
+
+        # AUC bar chart
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+        auc_list = []
+        for i in range(len(rms_all_files)):
+            slicer = slice(auc_range[0], auc_range[1]) if auc_range is not None else slice(None)
+            auc = np.trapz(rms_all_files[i][slicer], n_pts_all_files[i][slicer])
+            auc_list.append(auc)
+            rect = ax.bar(i, auc, label=labels[i], width=0.8)
+            ax.bar_label(rect, fmt='%.3f')
+        ax.set_xticks([])
+        ax.set_ylabel('Area under the curve')
+        ax.set_ylim((ax.get_ylim()[0], ax.get_ylim()[1] * 1.05))
+        plt.savefig(os.path.join(self.output_dir, os.path.splitext(output_filename)[0] + '_auc.pdf'), bbox_inches='tight')
 
     def plot_intermediate(self, filename, n_cols=3, interval=5, plot_uncertainty=True, plot_measurements=True, plot_truth=True,
                           label='Measured', linestyle=None, add_legend=True,
@@ -183,17 +199,18 @@ if __name__ == '__main__':
     #           'Uniform sampling'
     #           ]
     # analyzer = ResultAnalyzer(output_dir='factory')
-    # analyzer.compare_convergence(flist, labels, output_filename='YBCO_comparison_convergence.pdf')
+    # analyzer.compare_convergence(flist, labels, output_filename='YBCO_comparison_convergence.pdf', auc_range=(0, 30))
     # analyzer.plot_intermediate(flist[0], interval=6, output_filename='YBCO_intermediate.pdf')
     # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=32,
     #                            zoom_in_range_x=(9010, 9030), zoom_in_range_y=(0.7, 1.1),
     #                            output_filename='YBCO_intermediate_atNPts_32.pdf')
 
+    # -----------------------------------------
 
-    flist = [glob.glob('outputs/random_init/Pt_*_intermediate_data.pkl')[0],
-             glob.glob('outputs/random_init_no_reweighting/Pt_*_intermediate_data.pkl')[0],
-             glob.glob('outputs/random_init_posterior_stddev/Pt_*_intermediate_data.pkl')[0],
-             glob.glob('outputs/random_init_uniform_sampling/Pt_*_intermediate_data.pkl')[0]
+    flist = [glob.glob('outputs/random_init/Pt_flat_*_intermediate_data.pkl')[0],
+             glob.glob('outputs/random_init_no_reweighting/Pt_flat_*_intermediate_data.pkl')[0],
+             glob.glob('outputs/random_init_posterior_stddev/Pt_flat_*_intermediate_data.pkl')[0],
+             glob.glob('outputs/random_init_uniform_sampling/Pt_flat_*_intermediate_data.pkl')[0]
              ]
     labels = ['Comprehensive acq. + reweighting',
               'Comprehensive acq.',
@@ -203,7 +220,7 @@ if __name__ == '__main__':
     analyzer = ResultAnalyzer(output_dir='factory')
     # analyzer.plot_intermediate(flist[0], interval=1, make_animation=True, output_filename='Pt_intermediate_animation.mp4')
     # analyzer.plot_intermediate(flist[3], interval=1, make_animation=True, output_filename='Pt_intermediate_uniform_sampling_animation.mp4')
-    analyzer.compare_convergence(flist, labels, ref_line_y=0.007, add_legend=False, output_filename='Pt_comparison_convergence.pdf', figsize=(8, 4))
+    analyzer.compare_convergence(flist, labels, ref_line_y=0.01, add_legend=False, output_filename='Pt_comparison_convergence.pdf', figsize=(8, 4), auc_range=(0, 40))
     analyzer.plot_intermediate(flist[0], interval=5, output_filename='Pt_intermediate.pdf')
     analyzer.compare_intermediate(flist, labels, interval=5, n_cols=3, add_legend=False, output_filename='Pt_comparison_intermediate.pdf')
     # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=32,
