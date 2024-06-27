@@ -80,7 +80,7 @@ configs = XANESExperimentGuideConfig(
                                  'gamma': 0.95,
                                  'addon_term_lower_bound': 3e-2,
                                  'estimate_posterior_mean_by_interpolation': False,
-                                 'debug': True
+                                 'debug': False
                                  },
 
     optimizer_class=DiscreteOptimizer,
