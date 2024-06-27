@@ -34,8 +34,23 @@ class YBCORawDataset(SpectroscopyDataset):
         super().__init__(*args, **kwargs)
         table = pd.read_table(self.path, comment='#', header=None, sep='\s+')
         self.energies_ev = table[0].to_numpy()
-        self.data = (table[4] / table[5]).to_numpy()
+        self.data = np.log(table[4] / table[5]).to_numpy()
         self.data = self.data.reshape(1, -1)
+        
+
+class LTORawDataset(SpectroscopyDataset):
+    def __init__(self, *args, filename_pattern='*', **kwargs):
+        super().__init__(*args, **kwargs)
+        filelist = glob.glob(os.path.join(self.path, filename_pattern))
+        filelist.sort()
+        self.data = []
+        for i, fname in enumerate(filelist):
+            table = pd.read_table(fname, comment='#', header=None, sep='\s+')
+            if i == 0:
+                self.energies_ev = table[0].to_numpy()
+                data = np.log(table[2] / table[3]).to_numpy()
+                self.data.append(data)
+        self.data = np.stack(self.data)
 
 
 class RowMajorCSVSpectroscopyDataset(SpectroscopyDataset):

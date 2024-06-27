@@ -37,13 +37,13 @@ ref_spectra_1 = torch.tensor(YBCORawDataset('data/raw/YBCO/YBCO_eparc.0001')[0][
 energies = YBCORawDataset('data/raw/YBCO/YBCO_epararb.0001').energies_ev[14:232]
 energies = torch.tensor(energies)
 # y_fit = linear_fit([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)], data)
-# fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-# ax.plot(to_numpy(energies), data, label='data')
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(to_numpy(energies), data, label='data')
 # ax.plot(to_numpy(energies), to_numpy(ref_spectra_0), label='ref1')
 # ax.plot(to_numpy(energies), to_numpy(ref_spectra_1), label='ref2')
 # ax.plot(to_numpy(energies), y_fit, label='fit', linestyle='--')
 # plt.legend()
-# plt.show()
+plt.show()
 
 ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
 ref_spectra_x = energies
@@ -86,7 +86,7 @@ configs = XANESExperimentGuideConfig(
     acqf_weight_func_post_edge_width=1.0,
     stopping_criterion_configs=StoppingCriterionConfig(
         method='max_uncertainty',
-        params={'threshold': 0.2}
+        params={'threshold': 0.03}
     ),
     use_spline_interpolation_for_posterior_mean=True
 )
