@@ -2,6 +2,7 @@ import os
 import glob
 import pickle
 import contextlib
+from typing import Optional
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -94,7 +95,7 @@ class ResultAnalyzer:
             fig, ax = plt.subplots(1, 1)
         else:
             if fig is None:
-                fig, ax = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3))
+                fig, ax = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3), squeeze=False)
             else:
                 ax = fig.axes
                 ax = [ax[i * n_cols:(i + 1) * n_cols] for i in range(ax[0].get_gridspec().nrows)]
@@ -150,33 +151,29 @@ class ResultAnalyzer:
 
     def compare_estimates(self, file_list, labels, at_n_pts=20,
                           zoom_in_range_x=None, zoom_in_range_y=None, add_legend=True, figsize=(5, 5),
-                          normalize_and_detilt=False, normalization_fit_ranges=None,
+                          normalizer: Optional[xanestools.XANESNormalizer] = None,
                           output_filename='comparison_estimate.pdf'):
         fig, ax = plt.subplots(1, 1, figsize=figsize)
         data = pickle.load(open(file_list[0], 'rb'))
         true_x, true_y = data['data_x'], data['data_y']
-        postproc_fits = None
-        if normalize_and_detilt:
-            true_y, postproc_fits = xanestools.detilt_and_normalize(true_x, true_y, return_fits=True,
-                                                                    fit_ranges=normalization_fit_ranges)
+        if normalizer is not None:
+            true_y = normalizer.apply(true_x, true_y)
 
         def plot_ax(ax, tick_interval=None, add_legend=True):
             for i, f in enumerate(file_list):
                 data = pickle.load(open(f, 'rb'))
                 at_iter = data['n_measured_list'].index(at_n_pts)
                 x, y = data['data_x'], data['mu_list'][at_iter]
-                if normalize_and_detilt:
-                    y = xanestools.detilt_and_normalize(x, y, fits_to_apply=postproc_fits,
-                                                        fit_ranges=normalization_fit_ranges)
+                if normalizer is not None:
+                    y = normalizer.apply(x, y)
                 ax.plot(x, y, linewidth=1, linestyle=self.style_list[i % len(self.style_list)], label=labels[i])
                 if i == 0:
                     meas_x, meas_y = data['measured_x_list'][at_iter], data['measured_y_list'][at_iter]
-                    if normalize_and_detilt:
+                    if normalizer is not None:
                         sorted_inds = np.argsort(meas_x)
                         meas_x = meas_x[sorted_inds]
                         meas_y = meas_y[sorted_inds]
-                        meas_y = xanestools.detilt_and_normalize(meas_x, meas_y, fits_to_apply=postproc_fits,
-                                                                 fit_ranges=normalization_fit_ranges)
+                        meas_y = normalizer.apply(meas_x, meas_y)
                     ax.scatter(meas_x, meas_y, s=4)
             ax.plot(true_x, true_y, color='gray', alpha=0.5, linestyle='--', label='Ground truth')
             if tick_interval is not None:
@@ -233,9 +230,34 @@ if __name__ == '__main__':
     analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=32,
                                zoom_in_range_x=(9010, 9030), zoom_in_range_y=(0.9, 1.2), add_legend=False,
                                output_filename='YBCO_intermediate_atNPts_32.pdf')
+    normalizer = xanestools.XANESNormalizer()
+    normalizer.load_state("outputs/YBCO_raw_randInit/normalizer_state.npy")
     analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=50, add_legend=False,
-                               normalize_and_detilt=True, normalization_fit_ranges=((8920, 8965), (9040, 9085)),
+                               normalizer=normalizer,
                                output_filename='YBCO_intermediate_atNPts_50_norm_detilt.pdf')
+    
+    # -----------------------------------------
+    
+    flist = [glob.glob('outputs/LTO_raw_randInit/Sample1*_intermediate_data.pkl')[0],
+             glob.glob('outputs/LTO_raw_randInit_noReweighting/Sample1*_intermediate_data.pkl')[0],
+             glob.glob('outputs/LTO_raw_randInit_posteriorStddev/Sample1*_intermediate_data.pkl')[0],
+             glob.glob('outputs/LTO_raw_randInit_uniformSampling/Sample1*_intermediate_data.pkl')[0]
+             ]
+    labels = ['Comprehensive acq. + reweighting',
+              'Comprehensive acq.',
+              'Posterior uncertainty only',
+              'Uniform sampling'
+              ]
+    analyzer = ResultAnalyzer(output_dir='factory')
+    analyzer.compare_convergence(flist, labels, output_filename='LTO_comparison_convergence.pdf', auc_range=(0, 30), 
+                                 ref_line_y=0.004, rms_normalization_factor=1.0)
+    analyzer.plot_intermediate(flist[0], interval=6, output_filename='LTO_intermediate.pdf')
+    # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=32,
+    #                            zoom_in_range_x=(9010, 9030), zoom_in_range_y=(0.9, 1.2), add_legend=False,
+    #                            output_filename='YBCO_intermediate_atNPts_32.pdf')
+    # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=50, add_legend=False,
+    #                            normalize_and_detilt=True, normalization_fit_ranges=((8920, 8965), (9040, 9085)),
+    #                            output_filename='YBCO_intermediate_atNPts_50_norm_detilt.pdf')
 
     # -----------------------------------------
 

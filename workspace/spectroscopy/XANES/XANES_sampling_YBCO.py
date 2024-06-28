@@ -17,6 +17,7 @@ from autobl.steering.optimization import *
 from autobl.steering.experiment import SimulatedScanningExperiment
 from autobl.steering.guide import *
 from autobl.steering.io_util import *
+from autobl.tools.spectroscopy.xanes import XANESNormalizer
 from autobl.util import *
 
 torch.set_default_device('cpu')
@@ -30,11 +31,24 @@ def linear_fit(basis_list, data):
     y_fit = (a @ x).reshape(-1)
     return y_fit
 
+dataset = YBCORawDataset('data/raw/YBCO/YBCO_epararb.0001')
+data = dataset[0]
+energies = dataset.energies_ev
+ref_spectra_0 = YBCORawDataset('data/raw/YBCO/YBCO_epara.0001')[0]
+ref_spectra_1 = YBCORawDataset('data/raw/YBCO/YBCO_eparc.0001')[0]
+
+# Fit detilter and normalizer
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(to_numpy(energies), data, label='data')
+plt.show()
+xanes_normalizer = XANESNormalizer()
+xanes_normalizer.fit(energies, data, fit_ranges=((8788, 8914), (9401, 10000)))
+
 # Only keep 8920 - 9080 eV
-data = YBCORawDataset('data/raw/YBCO/YBCO_epararb.0001')[0][14:232]
-ref_spectra_0 = torch.tensor(YBCORawDataset('data/raw/YBCO/YBCO_epara.0001')[0][14:232])
-ref_spectra_1 = torch.tensor(YBCORawDataset('data/raw/YBCO/YBCO_eparc.0001')[0][14:232])
-energies = YBCORawDataset('data/raw/YBCO/YBCO_epararb.0001').energies_ev[14:232]
+data = data[14:232]
+ref_spectra_0 = torch.tensor(ref_spectra_0[14:232])
+ref_spectra_1 = torch.tensor(ref_spectra_1[14:232])
+energies = energies[14:232]
 energies = torch.tensor(energies)
 # y_fit = linear_fit([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)], data)
 fig, ax = plt.subplots(1, 1, figsize=(5, 3))
@@ -100,6 +114,7 @@ analyzer_configs = ExperimentAnalyzerConfig(
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
 experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+xanes_normalizer.save_state('outputs/YBCO_raw_randInit/normalizer_state.npy')
 
 
 if True:

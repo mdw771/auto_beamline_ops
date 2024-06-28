@@ -1,8 +1,35 @@
+from argparse import ArgumentParser
 from typing import Optional, Tuple, Sequence
 
 import numpy as np
 import scipy
 
+
+class XANESNormalizer:
+    
+    def __init__(self) -> None:
+        self.p_pre = None
+        self.p_post = None
+        
+    def fit(self, data_x, data_y, fit_ranges=None):
+        _, (self.p_pre, self.p_post) = detilt_and_normalize(
+            data_x, data_y, fit_ranges=fit_ranges, return_fits=True, fits_to_apply=None
+        )
+        
+    def apply(self, data_x, data_y):
+        data = detilt_and_normalize(
+            data_x, data_y, return_fits=False, fits_to_apply=[self.p_pre, self.p_post]
+        )
+        return data
+    
+    def save_state(self, path):
+        np.save(path, self.__dict__)
+        
+    def load_state(self, path):
+        d = np.load(path, allow_pickle=True).item()
+        for k in d.keys():
+            self.__dict__[k] = d[k]
+        
 
 def estimate_edge_location_and_width(data_x: np.ndarray, data_y: np.ndarray, x_dense: Optional[np.ndarray] = None,
                                      return_in_pixel_unit=False) -> Tuple[float | int, float]:
@@ -45,14 +72,14 @@ def detilt_and_normalize(data_x, data_y, fit_ranges=None, return_fits=False, fit
     :param data_y: ndarray.
     :return: ndarray. Processed spectrum.
     """
-    if fit_ranges is None:
-        edge_loc, edge_width = estimate_edge_location_and_width(data_x, data_y)
-        range_pre = (data_x[0], edge_loc - edge_width * 3)
-        range_post = (edge_loc + edge_width * 3, data_x[-1])
-    else:
-        range_pre, range_post = fit_ranges
-
     if fits_to_apply is None:
+        if fit_ranges is None:
+            edge_loc, edge_width = estimate_edge_location_and_width(data_x, data_y)
+            range_pre = (data_x[0], edge_loc - edge_width * 3)
+            range_post = (edge_loc + edge_width * 3, data_x[-1])
+        else:
+            range_pre, range_post = fit_ranges
+            
         # Fit pre-edge
         mask = (data_x < range_pre[1]) & (data_x >= range_pre[0])
         x = data_x[mask]
