@@ -69,7 +69,9 @@ class ScanningExperiment(Experiment):
         if method == 'uniform':
             x_init = torch.linspace(lb, ub, n).double().reshape(-1, 1)
         elif method == 'random':
-            x_init = torch.rand(n) * (ub - lb) + lb
+            assert n > 2
+            x_init = torch.rand(n - 2) * (ub - lb) + lb
+            x_init = torch.concat([x_init, torch.tensor([lb, ub], device=x_init.device, dtype=x_init.dtype)])
             x_init = torch.sort(x_init).values
             x_init = x_init.double().reshape(-1, 1)
         elif method == 'spectral':
