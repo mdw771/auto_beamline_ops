@@ -48,8 +48,12 @@ class LTORawDataset(SpectroscopyDataset):
             table = pd.read_table(fname, comment='#', header=None, sep='\s+')
             if i == 0:
                 self.energies_ev = table[0].to_numpy()
-                data = np.log(table[2] / table[3]).to_numpy()
-                self.data.append(data)
+            else:
+                assert len(table[0].to_numpy()) == len(self.energies_ev), \
+                        "Inconsistent number of points at {} ({} vs {}).".format(
+                            i, len(table[0].to_numpy()), len(self.energies_ev))
+            data = np.log(table[2] / table[3]).to_numpy()
+            self.data.append(data)
         self.data = np.stack(self.data)
 
 

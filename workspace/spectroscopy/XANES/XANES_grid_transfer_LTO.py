@@ -18,18 +18,22 @@ from autobl.steering.measurement import *
 from autobl.steering.acquisition import *
 from autobl.steering.optimization import *
 from autobl.steering.experiment import SimulatedScanningExperiment
+from autobl.steering.io_util import *
 from autobl.util import *
+import autobl.tools.spectroscopy.xanes as xanestools
 
 torch.set_default_device('cpu')
 
 
 class LTOGridTransferTester:
 
-    def __init__(self, test_data_path, ref_spectra_data_path, output_dir='outputs',
+    def __init__(self, test_data_path, test_data_filename_pattern, ref_spectra_data_path, ref_data_filename_pattern, output_dir='outputs',
                  grid_generation_method='init', grid_generation_spectra_indices=(0,), grid_intersect_tol=1.0,
                  n_initial_measurements=10, n_target_measurements=40, initialization_method='uniform'):
         self.test_data_path = test_data_path
         self.ref_spectra_data_path = ref_spectra_data_path
+        self.test_data_filename_pattern = test_data_filename_pattern
+        self.ref_data_filename_pattern = ref_data_filename_pattern
         self.test_data_all_spectra = None
         self.test_energies = None
         self.ref_data_all_spectra = None
@@ -65,16 +69,17 @@ class LTOGridTransferTester:
             json.dump(d, f, indent=4, separators=(',', ': '))
 
     @staticmethod
-    def load_data_from_csv(path):
-        table = pd.read_csv(path, header=None)
-        data_all_spectra = table.iloc[1:].to_numpy()
-        energies = torch.tensor(table.iloc[0].to_numpy())
+    def load_data_from_csv(path, filename_pattern):
+        dataset = LTORawDataset(path, filename_pattern=filename_pattern)
+        energies = dataset.energies_ev
+        mask = (energies >= 4936) & (energies <= 5006)
+        data_all_spectra = dataset.data[:, mask]
+        energies = torch.tensor(energies[mask])
         return data_all_spectra, energies
 
     def load_data(self):
-        self.test_data_all_spectra, self.test_energies = self.load_data_from_csv(self.test_data_path)
-
-        self.ref_data_all_spectra, self.ref_spectra_x = self.load_data_from_csv(self.ref_spectra_data_path)
+        self.test_data_all_spectra, self.test_energies = self.load_data_from_csv(self.test_data_path, filename_pattern=self.test_data_filename_pattern)
+        self.ref_data_all_spectra, self.ref_spectra_x = self.load_data_from_csv(self.ref_spectra_data_path, filename_pattern=self.ref_data_filename_pattern)
         ref_spectra_0 = torch.tensor(self.ref_data_all_spectra[0])
         ref_spectra_1 = torch.tensor(self.ref_data_all_spectra[-1])
         self.ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
@@ -290,9 +295,9 @@ class LTOGridTransferTester:
             metric_val = rms(data_interp, self.test_data_all_spectra[ind])
             self.log_data(ind, metric_val)
 
-    def post_analyze(self):
+    def post_analyze(self, normalizer=None):
         self.analyze_rms()
-        self.analyze_phase_transition_percentages()
+        self.analyze_phase_transition_percentages(normalizer=normalizer)
 
     def analyze_rms(self):
         indices = []
@@ -316,7 +321,7 @@ class LTOGridTransferTester:
         ax.set_ylabel('RMS')
         plt.savefig(os.path.join(self.output_dir, 'rms_all_test_spectra.pdf'))
 
-    def calculate_phase_transition_percentages(self):
+    def calculate_phase_transition_percentages(self, normalizer=None):
         indices = []
         percentages_estimated = []
         percentages_true = []
@@ -337,8 +342,15 @@ class LTOGridTransferTester:
             ind = int(re.findall('\d+', f)[-1])
             indices.append(ind)
             table = pd.read_csv(f, index_col=None)
+            energies = table['energy'].to_numpy()
             estimated_spectrum = table['estimated_data'].to_numpy()
             true_spectrum = table['true_data'].to_numpy()
+            
+            # Normalize and detilt if normalizer is provided
+            if normalizer is not None:
+                estimated_spectrum = normalizer.apply(energies, estimated_spectrum)
+                true_spectrum = normalizer.apply(energies, true_spectrum)
+            
             p_estimated, r = self.get_phase_transition_percentage(estimated_spectrum, ref_spectrum_fitting_estimated,
                                                                   return_fitting_residue=True)
             percentages_estimated.append(p_estimated)
@@ -353,8 +365,8 @@ class LTOGridTransferTester:
                                    })
         return table
 
-    def analyze_phase_transition_percentages(self):
-        table = self.calculate_phase_transition_percentages()
+    def analyze_phase_transition_percentages(self, normalizer=None):
+        table = self.calculate_phase_transition_percentages(normalizer=normalizer)
         table.to_csv(os.path.join(self.output_dir, 'phase_transition_percentages.csv'), index=False)
 
         fig, ax = plt.subplots(1, 1)
@@ -384,18 +396,21 @@ class LTOGridTransferTester:
 
 
 if __name__ == '__main__':
-    set_random_seed(164)
+    normalizer = xanestools.XANESNormalizer()
+    normalizer.load_state("outputs/LTO_raw_randInit/normalizer_state.npy")
     
-    tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer_LTO/grid_redoForEach/Sample1_50C',
-        grid_generation_method='redo_for_each',
-        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze()
+    # set_random_seed(164)
+    
+    # tester = LTOGridTransferTester(
+    #     test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample3.[0-9]*",
+    #     ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
+    #     output_dir='outputs/grid_transfer_LTO/grid_redoForEach/50C',
+    #     grid_generation_method='redo_for_each',
+    #     n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
+    # )
+    # tester.build()
+    # tester.run()
+    # tester.post_analyze(normalizer=normalizer)
 
     # tester = LTOGridTransferTester(
     #     test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
@@ -410,23 +425,23 @@ if __name__ == '__main__':
     
     # ----------------------------------------------
     
-    set_random_seed(1634)
+    # set_random_seed(1634)
 
-    tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer_LTO/grid_initOfSelf/Sample1_50C',
-        grid_generation_method='init',
-        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze()
+    # tester = LTOGridTransferTester(
+    #     test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample3.[0-9]*",
+    #     ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
+    #     output_dir='outputs/grid_transfer_LTO/grid_initOfSelf/50C',
+    #     grid_generation_method='init',
+    #     n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
+    # )
+    # tester.build()
+    # tester.run()
+    # tester.post_analyze(normalizer=normalizer)
 
     # tester = LTOGridTransferTester(
     #     test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
     #     ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-    #     output_dir='outputs/grid_transfer_LTO/grid_initOfSelf/Sample2_60C',
+    #     output_dir='outputs/grid_transfer_LTO/grid_initOfSelf/Sample1_60C',
     #     grid_generation_method='init',
     #     n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
     # )
@@ -436,20 +451,20 @@ if __name__ == '__main__':
     
     # ----------------------------------------------
     
-    set_random_seed(134)
+    # set_random_seed(134)
 
-    tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer_LTO/grid_selectedRef/Sample1_50C',
-        grid_generation_method='ref',
-        grid_generation_spectra_indices=(0, 5, 8, 12),
-        grid_intersect_tol=3.0,
-        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze()
+    # tester = LTOGridTransferTester(
+    #     test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample3.[0-9]*",
+    #     ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
+    #     output_dir='outputs/grid_transfer_LTO/grid_selectedRef/50C',
+    #     grid_generation_method='ref',
+    #     grid_generation_spectra_indices=(0, 5, 8, 12),
+    #     grid_intersect_tol=3.0,
+    #     n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
+    # )
+    # tester.build()
+    # tester.run()
+    # tester.post_analyze(normalizer=normalizer)
 
     # tester = LTOGridTransferTester(
     #     test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
@@ -463,3 +478,19 @@ if __name__ == '__main__':
     # tester.build()
     # tester.run()
     # tester.post_analyze()
+
+    # ------------------------------------------------
+    # Generate ref data plot
+    set_random_seed(134)
+
+    tester = LTOGridTransferTester(
+        test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample2.[0-9]*",
+        ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
+        output_dir='outputs/grid_transfer_LTO/grid_redoForEach/70C',
+        grid_generation_method='redo_for_each',
+        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
+    )
+    tester.build()
+    tester.run()
+    tester.post_analyze(normalizer=normalizer)
+    
