@@ -29,9 +29,9 @@ energies = dataset.energies_ev
 data = data_all_spectra[len(data_all_spectra) // 2]
 print(data_all_spectra.shape)
 
-# plt.figure()
-# plt.plot(energies, data)
-# plt.show()
+plt.figure()
+plt.plot(energies, data)
+plt.show()
 
 normalizer = xanestools.XANESNormalizer()
 normalizer.fit(energies, data, fit_ranges=((4900, 4950), (5100, 5200)))

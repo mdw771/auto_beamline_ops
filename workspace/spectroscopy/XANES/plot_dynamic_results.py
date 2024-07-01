@@ -11,8 +11,10 @@ import matplotlib
 import numpy as np
 import pandas as pd
 import scipy.interpolate
+from torch import normal
 
 from autobl.util import *
+import autobl.tools.spectroscopy.xanes as xanestools
 from plot_results import ResultAnalyzer
 from XANES_grid_transfer_LTO import LTOGridTransferTester
 from XANES_grid_transfer_Pt import PtGridTransferTester
@@ -36,11 +38,11 @@ class DynamicExperimentResultAnalyzer:
             metadata = json.load(f)
         return metadata
 
-    def plot_data(self, folder, transpose=False, xtick_interval=None, value_range=(0, 1.7), plot_func='imshow',
-                  line_plot_labels=None, output_filename='test_data.pdf'):
+    def plot_data(self, folder, transpose=False, xtick_interval=None, value_range=(0, 1.7), normalize=False,
+                  plot_func='imshow', line_plot_labels=None, output_filename='test_data.pdf'):
         metadata = self.get_metadata(folder)
         tester = self.tester_class(**metadata)
-        tester.load_data()
+        tester.load_data(normalize=normalize)
 
         fig, ax = plt.subplots(figsize=(6, 3.5))
         x, y = to_numpy(tester.test_energies.squeeze()), np.arange(len(tester.test_data_all_spectra))
@@ -53,6 +55,8 @@ class DynamicExperimentResultAnalyzer:
             pts = np.stack(np.meshgrid(y, x, indexing='ij'), axis=-1).reshape(-1, 2)
             xx, yy = np.meshgrid(np.linspace(x.min(), x.max(), len(x)), np.linspace(y.min(), y.max(), len(y)))
             zz = scipy.interpolate.griddata(pts, all_spectra.reshape(-1), (yy, xx), 'linear')
+            if value_range is None:
+                value_range = (None, None)
             im = ax.imshow(zz, extent=[x.min(), x.max(), y.max(), y.min()], vmin=value_range[0], vmax=value_range[1],
                            cmap='jet')
             if xtick_interval is not None:
@@ -175,44 +179,44 @@ class DynamicExperimentResultAnalyzer:
 
 
 if __name__ == '__main__':
-    folders = [
-        'outputs/grid_transfer_LTO/grid_redoForEach/50C',
-        'outputs/grid_transfer_LTO/grid_initOfSelf/50C',
-        'outputs/grid_transfer_LTO/grid_selectedRef/50C',
-    ]
-    labels = [
-        'Run for each',
-        'Initial spectrum',
-        'Selected from ref. experiments'
-    ]
-    
-    analyzer = DynamicExperimentResultAnalyzer(tester_class=LTOGridTransferTester)
-    analyzer.plot_data(folders[0], transpose=True, output_filename='LTO_50C_test_data.pdf')
-    # analyzer.plot_data('outputs/grid_transfer_LTO/grid_initOfSelf/70C', transpose=True, xtick_interval=5, output_filename='LTO_70C_test_data.pdf')
-    analyzer.compare_rms_across_time(folders, labels, output_filename='LTO_50C_comparison_rms_across_time.pdf')
-    analyzer.compare_calculated_percentages(folders, labels, read_precalculated_percentage_data=False, output_filename='LTO_50C_comparison_calculated_percentages.pdf')
-    analyzer.plot_spectrum(folders, labels, 80, output_filename='LTO_50C_estimated_spectra_80.pdf')
-    analyzer.plot_spectrum(folders, labels, 90, output_filename='LTO_50C_estimated_spectra_90.pdf')
-
-    # -----------------------------------
-
     # folders = [
-    #     'outputs/grid_transfer_Pt/grid_redoForEach/Pt',
-    #     'outputs/grid_transfer_Pt/grid_initOfSelf/Pt',
-    #     'outputs/grid_transfer_Pt/grid_selectedRef/Pt',
+    #     'outputs/grid_transfer_LTO/grid_redoForEach/50C',
+    #     'outputs/grid_transfer_LTO/grid_initOfSelf/50C',
+    #     'outputs/grid_transfer_LTO/grid_selectedRef/50C',
     # ]
     # labels = [
     #     'Run for each',
     #     'Initial spectrum',
     #     'Selected from ref. experiments'
     # ]
+    
+    # analyzer = DynamicExperimentResultAnalyzer(tester_class=LTOGridTransferTester)
+    # analyzer.plot_data(folders[0], transpose=True, value_range=(None, None), normalize=True, plot_func='plot', output_filename='LTO_50C_test_data.pdf')
+    # analyzer.plot_data('outputs/grid_transfer_LTO/grid_initOfSelf/70C', transpose=True, value_range=(None, None), normalize=True, plot_func='plot', xtick_interval=5, output_filename='LTO_70C_test_data.pdf')
+    # analyzer.compare_rms_across_time(folders, labels, output_filename='LTO_50C_comparison_rms_across_time.pdf')
+    # analyzer.compare_calculated_percentages(folders, labels, read_precalculated_percentage_data=False, output_filename='LTO_50C_comparison_calculated_percentages.pdf')
+    # analyzer.plot_spectrum(folders, labels, 80, output_filename='LTO_50C_estimated_spectra_80.pdf')
+    # analyzer.plot_spectrum(folders, labels, 90, output_filename='LTO_50C_estimated_spectra_90.pdf')
 
-    # analyzer = DynamicExperimentResultAnalyzer(tester_class=PtGridTransferTester)
-    # label_val_list = [int(re.findall('\d+', f)[-1]) for f in glob.glob('data/raw/Pt-XANES/*.nor')]
-    # label_val_list.sort()
-    # label_list = [str(x) + '$^\circ\!$C' for x in label_val_list]
-    # analyzer.plot_data(folders[0], transpose=True, plot_func='plot', line_plot_labels=label_list, output_filename='Pt_grid_transfer_test_data.pdf')
-    # analyzer.compare_rms_across_time(folders, labels, output_filename='Pt_grid_transfer_comparison_rms_across_time.pdf')
-    # analyzer.compare_calculated_percentages(folders, labels, x_data=label_val_list[1:-1], x_label='Temperature ($\!^\circ\!$C)', read_precalculated_percentage_data=False, output_filename='Pt_grid_transfer_comparison_calculated_percentages.pdf')
-    # # analyzer.plot_spectrum(folders, labels, 0, output_filename='Pt_grid_transfer_estimated_spectra_0.pdf')
-    # # analyzer.plot_spectrum(folders, labels, 21, output_filename='Pt_grid_transfer_estimated_spectra_21.pdf')
+    # -----------------------------------
+
+    folders = [
+        'outputs/grid_transfer_Pt/grid_redoForEach/Pt',
+        'outputs/grid_transfer_Pt/grid_initOfSelf/Pt',
+        'outputs/grid_transfer_Pt/grid_selectedRef/Pt',
+    ]
+    labels = [
+        'Run for each',
+        'Initial spectrum',
+        'Selected from ref. experiments'
+    ]
+
+    analyzer = DynamicExperimentResultAnalyzer(tester_class=PtGridTransferTester)
+    label_val_list = [int(re.findall('\d+', f)[-1]) for f in glob.glob('data/raw/Pt-XANES/*.nor')]
+    label_val_list.sort()
+    label_list = [str(x) + '$^\circ\!$C' for x in label_val_list]
+    analyzer.plot_data(folders[0], transpose=True, plot_func='plot', line_plot_labels=label_list, output_filename='Pt_grid_transfer_test_data.pdf')
+    analyzer.compare_rms_across_time(folders, labels, output_filename='Pt_grid_transfer_comparison_rms_across_time.pdf')
+    analyzer.compare_calculated_percentages(folders, labels, x_data=label_val_list[1:-1], x_label='Temperature ($\!^\circ\!$C)', read_precalculated_percentage_data=False, output_filename='Pt_grid_transfer_comparison_calculated_percentages.pdf')
+    # analyzer.plot_spectrum(folders, labels, 0, output_filename='Pt_grid_transfer_estimated_spectra_0.pdf')
+    # analyzer.plot_spectrum(folders, labels, 21, output_filename='Pt_grid_transfer_estimated_spectra_21.pdf')

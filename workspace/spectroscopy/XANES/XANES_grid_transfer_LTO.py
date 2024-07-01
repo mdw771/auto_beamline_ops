@@ -58,6 +58,8 @@ class LTOGridTransferTester:
         d = {
             'test_data_path': self.test_data_path,
             'ref_spectra_data_path': self.ref_spectra_data_path,
+            'test_data_filename_pattern': self.test_data_filename_pattern,
+            'ref_data_filename_pattern': self.ref_data_filename_pattern,
             'output_dir': self.output_dir,
             'grid_generation_method': self.grid_generation_method,
             'grid_generation_spectra_indices': self.grid_generation_spectra_indices,
@@ -69,17 +71,23 @@ class LTOGridTransferTester:
             json.dump(d, f, indent=4, separators=(',', ': '))
 
     @staticmethod
-    def load_data_from_csv(path, filename_pattern):
+    def load_data_from_csv(path, filename_pattern, normalize=False):
         dataset = LTORawDataset(path, filename_pattern=filename_pattern)
         energies = dataset.energies_ev
+        data_all_spectra = dataset.data
+        if normalize:
+            for i in range(len(data_all_spectra)):
+                normalizer = xanestools.XANESNormalizer()
+                normalizer.fit(energies, data_all_spectra[i], fit_ranges=((4900, 4950), (5100, 5200)))
+                data_all_spectra[i] = normalizer.apply(energies, data_all_spectra[i])
         mask = (energies >= 4936) & (energies <= 5006)
-        data_all_spectra = dataset.data[:, mask]
+        data_all_spectra = data_all_spectra[:, mask]
         energies = torch.tensor(energies[mask])
         return data_all_spectra, energies
 
-    def load_data(self):
-        self.test_data_all_spectra, self.test_energies = self.load_data_from_csv(self.test_data_path, filename_pattern=self.test_data_filename_pattern)
-        self.ref_data_all_spectra, self.ref_spectra_x = self.load_data_from_csv(self.ref_spectra_data_path, filename_pattern=self.ref_data_filename_pattern)
+    def load_data(self, normalize=False):
+        self.test_data_all_spectra, self.test_energies = self.load_data_from_csv(self.test_data_path, filename_pattern=self.test_data_filename_pattern, normalize=normalize)
+        self.ref_data_all_spectra, self.ref_spectra_x = self.load_data_from_csv(self.ref_spectra_data_path, filename_pattern=self.ref_data_filename_pattern, normalize=normalize)
         ref_spectra_0 = torch.tensor(self.ref_data_all_spectra[0])
         ref_spectra_1 = torch.tensor(self.ref_data_all_spectra[-1])
         self.ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
@@ -486,8 +494,8 @@ if __name__ == '__main__':
     tester = LTOGridTransferTester(
         test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample2.[0-9]*",
         ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
-        output_dir='outputs/grid_transfer_LTO/grid_redoForEach/70C',
-        grid_generation_method='redo_for_each',
+        output_dir='outputs/grid_transfer_LTO/grid_initOfSelf/70C',
+        grid_generation_method='init',
         n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
     )
     tester.build()

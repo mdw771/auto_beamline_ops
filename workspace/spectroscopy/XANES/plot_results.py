@@ -238,33 +238,10 @@ if __name__ == '__main__':
     
     # -----------------------------------------
     
-    flist = [glob.glob('outputs/LTO_raw_randInit/Sample1*_intermediate_data.pkl')[0],
-             glob.glob('outputs/LTO_raw_randInit_noReweighting/Sample1*_intermediate_data.pkl')[0],
-             glob.glob('outputs/LTO_raw_randInit_posteriorStddev/Sample1*_intermediate_data.pkl')[0],
-             glob.glob('outputs/LTO_raw_randInit_uniformSampling/Sample1*_intermediate_data.pkl')[0]
-             ]
-    labels = ['Comprehensive acq. + reweighting',
-              'Comprehensive acq.',
-              'Posterior uncertainty only',
-              'Uniform sampling'
-              ]
-    analyzer = ResultAnalyzer(output_dir='factory')
-    analyzer.compare_convergence(flist, labels, output_filename='LTO_comparison_convergence.pdf', auc_range=(0, 30), 
-                                 ref_line_y=0.004, rms_normalization_factor=1.0)
-    analyzer.plot_intermediate(flist[0], interval=6, output_filename='LTO_intermediate.pdf')
-    # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=32,
-    #                            zoom_in_range_x=(9010, 9030), zoom_in_range_y=(0.9, 1.2), add_legend=False,
-    #                            output_filename='YBCO_intermediate_atNPts_32.pdf')
-    # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=50, add_legend=False,
-    #                            normalize_and_detilt=True, normalization_fit_ranges=((8920, 8965), (9040, 9085)),
-    #                            output_filename='YBCO_intermediate_atNPts_50_norm_detilt.pdf')
-
-    # -----------------------------------------
-
-    # flist = [glob.glob('outputs/random_init/Pt_*_intermediate_data.pkl')[0],
-    #          glob.glob('outputs/random_init_no_reweighting/Pt_*_intermediate_data.pkl')[0],
-    #          glob.glob('outputs/random_init_posterior_stddev/Pt_*_intermediate_data.pkl')[0],
-    #          glob.glob('outputs/random_init_uniform_sampling/Pt_*_intermediate_data.pkl')[0]
+    # flist = [glob.glob('outputs/LTO_raw_randInit/Sample1*_intermediate_data.pkl')[0],
+    #          glob.glob('outputs/LTO_raw_randInit_noReweighting/Sample1*_intermediate_data.pkl')[0],
+    #          glob.glob('outputs/LTO_raw_randInit_posteriorStddev/Sample1*_intermediate_data.pkl')[0],
+    #          glob.glob('outputs/LTO_raw_randInit_uniformSampling/Sample1*_intermediate_data.pkl')[0]
     #          ]
     # labels = ['Comprehensive acq. + reweighting',
     #           'Comprehensive acq.',
@@ -272,11 +249,34 @@ if __name__ == '__main__':
     #           'Uniform sampling'
     #           ]
     # analyzer = ResultAnalyzer(output_dir='factory')
-    # # analyzer.plot_intermediate(flist[0], interval=1, make_animation=True, output_filename='Pt_intermediate_animation.mp4')
-    # # analyzer.plot_intermediate(flist[3], interval=1, make_animation=True, output_filename='Pt_intermediate_uniform_sampling_animation.mp4')
-    # analyzer.compare_convergence(flist, labels, ref_line_y=0.01, add_legend=False, output_filename='Pt_comparison_convergence.pdf', figsize=(8, 4), auc_range=(0, 40))
-    # analyzer.plot_intermediate(flist[0], interval=5, output_filename='Pt_intermediate.pdf')
-    # analyzer.compare_intermediate(flist, labels, interval=5, n_cols=3, add_legend=False, output_filename='Pt_comparison_intermediate.pdf')
+    # analyzer.compare_convergence(flist, labels, output_filename='LTO_comparison_convergence.pdf', auc_range=(0, 30), 
+    #                              ref_line_y=0.004, rms_normalization_factor=1.0)
+    # analyzer.plot_intermediate(flist[0], interval=6, output_filename='LTO_intermediate.pdf')
     # # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=32,
-    # #                            zoom_in_range_x=(9010, 9030), zoom_in_range_y=(0.7, 1.1),
-    # #                            output_filename='Pt_intermediate_atNPts_32.pdf')
+    # #                            zoom_in_range_x=(9010, 9030), zoom_in_range_y=(0.9, 1.2), add_legend=False,
+    # #                            output_filename='YBCO_intermediate_atNPts_32.pdf')
+    # # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=50, add_legend=False,
+    # #                            normalize_and_detilt=True, normalization_fit_ranges=((8920, 8965), (9040, 9085)),
+    # #                            output_filename='YBCO_intermediate_atNPts_50_norm_detilt.pdf')
+
+    # -----------------------------------------
+
+    flist = [glob.glob('outputs/Pt_raw_randInit/Pt_*_intermediate_data.pkl')[0],
+             glob.glob('outputs/Pt_raw_randInit_noReweighting/Pt_*_intermediate_data.pkl')[0],
+             glob.glob('outputs/Pt_raw_randInit_posteriorStddev/Pt_*_intermediate_data.pkl')[0],
+             glob.glob('outputs/Pt_raw_randInit_uniformSampling/Pt_*_intermediate_data.pkl')[0]
+             ]
+    labels = ['Comprehensive acq. + reweighting',
+              'Comprehensive acq.',
+              'Posterior uncertainty only',
+              'Uniform sampling'
+              ]
+    analyzer = ResultAnalyzer(output_dir='factory')
+    # analyzer.plot_intermediate(flist[0], interval=1, make_animation=True, output_filename='Pt_intermediate_animation.mp4')
+    # analyzer.plot_intermediate(flist[3], interval=1, make_animation=True, output_filename='Pt_intermediate_uniform_sampling_animation.mp4')
+    analyzer.compare_convergence(flist, labels, ref_line_y=0.001, add_legend=False, output_filename='Pt_comparison_convergence.pdf', figsize=(8, 4), auc_range=(0, 40))
+    analyzer.plot_intermediate(flist[0], interval=5, output_filename='Pt_intermediate.pdf')
+    analyzer.compare_intermediate(flist, labels, interval=5, n_cols=3, add_legend=False, output_filename='Pt_comparison_intermediate.pdf')
+    # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=32,
+    #                            zoom_in_range_x=(9010, 9030), zoom_in_range_y=(0.7, 1.1),
+    #                            output_filename='Pt_intermediate_atNPts_32.pdf')
