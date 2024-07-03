@@ -27,7 +27,6 @@ dataset = LTORawDataset('data/raw/LiTiO_XANES/rawdata', filename_pattern="LTOsam
 data_all_spectra = dataset.data
 energies = dataset.energies_ev
 data = data_all_spectra[len(data_all_spectra) // 2]
-print(data_all_spectra.shape)
 
 plt.figure()
 plt.plot(energies, data)
@@ -93,7 +92,8 @@ analyzer_configs = ExperimentAnalyzerConfig(
     n_plot_interval=5
 )
 
-normalizer.save_state("outputs/LTO_raw_randInit/normalizer_state.npy")
+normalizer.save_state('outputs/LTO_raw_randInit/normalizer_state.npy')
+
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
 experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')

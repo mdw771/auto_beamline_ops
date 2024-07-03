@@ -18,21 +18,18 @@ from autobl.steering.experiment import SimulatedScanningExperiment
 from autobl.steering.guide import *
 from autobl.steering.io_util import *
 from autobl.util import *
+import autobl.tools.spectroscopy.xanes as xanestools
 
 torch.set_default_device('cpu')
 
 set_random_seed(124)
 
-data_raw = read_nor('data/raw/Pt-XANES/10Feb_PtL3_025_042C.nor')
+data_raw = read_nor('data/raw/Pt-XANES/Pt_xmu/10Feb_PtL3_025_042C.xmu')
 _, unique_inds = np.unique(data_raw['e'], return_index=True)
 unique_inds = np.sort(unique_inds)
 data_raw = data_raw.iloc[unique_inds]
-ref1 = read_nor('data/raw/Pt-XANES/10Feb_PtL3_024_026C.nor').iloc[unique_inds]
-ref2 = read_nor('data/raw/Pt-XANES/10Feb_PtL3_045_497C.nor').iloc[unique_inds]
-
-
-# Only keep 8920 - 9080 eV
-# data_all_spectra = data_all_spectra.iloc[14:232]
+ref1 = read_nor('data/raw/Pt-XANES/Pt_xmu/10Feb_PtL3_024_026C.xmu').iloc[unique_inds]
+ref2 = read_nor('data/raw/Pt-XANES/Pt_xmu/10Feb_PtL3_045_497C.xmu').iloc[unique_inds]
 
 def linear_fit(basis_list, data):
     a = np.stack([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)]).T
@@ -41,10 +38,20 @@ def linear_fit(basis_list, data):
     y_fit = (a @ x).reshape(-1)
     return y_fit
 
-data = data_raw['norm'].to_numpy()
-ref_spectra_0 = torch.tensor(ref1['norm'].to_numpy())
-ref_spectra_1 = torch.tensor(ref2['norm'].to_numpy())
+data = data_raw['xmu'].to_numpy()
+ref_spectra_0 = torch.tensor(ref1['xmu'].to_numpy())
+ref_spectra_1 = torch.tensor(ref2['xmu'].to_numpy())
 energies = data_raw['e'].to_numpy()
+
+normalizer = xanestools.XANESNormalizer()
+normalizer.fit(energies, data, fit_ranges=((11400, 11500), (11650, 11850)))
+
+# Only keep 11400 - 11700 eV
+mask = (energies >= 11400) & (energies <= 11700)
+data = data[mask]
+ref_spectra_0 = ref_spectra_0[mask]
+ref_spectra_1 = ref_spectra_1[mask]
+energies = energies[mask]
 
 energies = torch.tensor(energies)
 # y_fit = linear_fit([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)], data)
@@ -97,17 +104,18 @@ configs = XANESExperimentGuideConfig(
     acqf_weight_func_post_edge_width=1.0,
     stopping_criterion_configs=StoppingCriterionConfig(
         method='max_uncertainty',
-        params={'threshold': 0.04}
+        params={'threshold': 0.01}
     ),
     use_spline_interpolation_for_posterior_mean=True
 )
 
 analyzer_configs = ExperimentAnalyzerConfig(
     name='Pt',
-    output_dir='outputs/random_init',
+    output_dir='outputs/Pt_raw_randInit',
     n_plot_interval=5
 )
 
+normalizer.save_state("outputs/Pt_raw_randInit/normalizer_state.npy")
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
 experiment.run(n_initial_measurements=20, n_target_measurements=60, initial_measurement_method='random')
@@ -117,7 +125,7 @@ if True:
     # No acquisition reweighting
     set_random_seed(124)
     configs.n_updates_create_acqf_weight_func = None
-    analyzer_configs.output_dir = 'outputs/random_init_no_reweighting'
+    analyzer_configs.output_dir = 'outputs/Pt_raw_randInit_noReweighting'
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
@@ -127,7 +135,7 @@ if True:
     configs.acquisition_function_class = PosteriorStandardDeviation
     configs.acquisition_function_params = {}
     configs.stopping_criterion_configs = None
-    analyzer_configs.output_dir = 'outputs/random_init_posterior_stddev'
+    analyzer_configs.output_dir = 'outputs/Pt_raw_randInit_posteriorStddev'
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
@@ -136,9 +144,8 @@ if True:
     set_random_seed(124)
     configs.n_updates_create_acqf_weight_func = None
     configs.stopping_criterion_configs = None
-    analyzer_configs.output_dir = 'outputs/random_init_uniform_sampling'
+    analyzer_configs.output_dir = 'outputs/Pt_raw_randInit_uniformSampling'
     experiment = SimulatedScanningExperiment(configs, guide_class=UniformSamplingExperimentGuide,
                                              run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
-

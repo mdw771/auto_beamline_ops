@@ -66,9 +66,10 @@ class RowMajorCSVSpectroscopyDataset(SpectroscopyDataset):
 
 
 class NORSpectroscopyDataset(SpectroscopyDataset):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, file_pattern='*.nor', data_column='norm', **kwargs):
         super().__init__(*args, **kwargs)
-        flist = glob.glob(os.path.join(self.path, '*.nor'))
+        self.data_column = data_column
+        flist = glob.glob(os.path.join(self.path, file_pattern))
         flist.sort()
         self.data = []
         for f in flist:
@@ -76,10 +77,9 @@ class NORSpectroscopyDataset(SpectroscopyDataset):
             self.data.append(d)
         self.data = np.array(self.data)
 
-    @staticmethod
-    def load_data_from_nor(path):
+    def load_data_from_nor(self, path):
         table = read_nor(path)
-        data = table['norm'].to_numpy()
+        data = table[self.data_column].to_numpy()
         energies = table['e'].to_numpy()
         _, unique_inds = np.unique(energies, return_index=True)
         unique_inds = np.sort(unique_inds)
@@ -92,12 +92,11 @@ def read_nor(fname):
     with open(fname, 'r') as f:
         lines = f.readlines()
         columns = []
-        data = []
-        for l in lines:
-            if 'norm' in l and ' e ' in l:
+        for i, l in enumerate(lines):
+            if not lines[i + 1].startswith('#'):
                 columns = l[1:].strip().split()
-            if not l.startswith('#'):
-                data.append([float(x) for x in l.strip().split()])
-    data = np.array(data)
-    table = pd.DataFrame({columns[i]: data[:, i] for i in range(len(columns))})
+                break
+    table = pd.read_table(fname, comment='#', header=None, sep='\s+')
+    table.columns = columns
     return table
+

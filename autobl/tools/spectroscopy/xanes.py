@@ -7,20 +7,66 @@ import scipy
 
 class XANESNormalizer:
     
-    def __init__(self) -> None:
+    def __init__(self, fit_ranges=None, edge_loc=None, normalization_order=2) -> None:
         self.p_pre = None
         self.p_post = None
+        self.edge_loc = edge_loc
+        self.fit_ranges = fit_ranges
+        self.normalization_order = normalization_order
+        self.edge_height = 1.0
         
     def fit(self, data_x, data_y, fit_ranges=None):
-        _, (self.p_pre, self.p_post) = detilt_and_normalize(
-            data_x, data_y, fit_ranges=fit_ranges, return_fits=True, fits_to_apply=None
-        )
+        if fit_ranges is not None:
+            self.fit_ranges = fit_ranges
+        self.detilt_and_normalize(data_x, data_y, recalculate_fits=True)
         
     def apply(self, data_x, data_y):
-        data = detilt_and_normalize(
-            data_x, data_y, return_fits=False, fits_to_apply=[self.p_pre, self.p_post]
-        )
+        data = self.detilt_and_normalize(data_x, data_y, recalculate_fits=False)
         return data
+    
+    def detilt_and_normalize(self, data_x, data_y, recalculate_fits=False):
+        if recalculate_fits:
+            if self.fit_ranges is None or self.edge_loc is None:
+                self.edge_loc, edge_width = estimate_edge_location_and_width(data_x, data_y)
+                range_pre = (data_x[0], self.edge_loc - edge_width * 3)
+                range_post = (self.edge_loc + edge_width * 3, data_x[-1])
+            else:
+                range_pre, range_post = self.fit_ranges
+            
+            # Fit pre-edge
+            self.p_pre = self.fit_segment(data_x, data_y, range_pre, order=1)
+
+            # Fit post-edge
+            self.p_post = self.fit_segment(data_x, data_y, range_post, order=self.normalization_order)
+
+        data_corrected = self.normalize_data(data_x, data_y)
+        data_corrected = self.flatten_data(data_x, data_corrected, data_is_normalized=True)
+        return data_corrected
+    
+    def normalize_data(self, data_x, data_y):
+        data_corrected = data_y - np.poly1d(self.p_pre)(data_x)
+        self.edge_height = self.find_edge_height()
+        data_corrected = data_corrected / self.edge_height
+        return data_corrected
+    
+    def flatten_data(self, data_x, data_y, data_is_normalized=True):
+        diff = np.poly1d(self.p_post)(data_x) - np.poly1d(self.p_pre)(data_x) - self.edge_height
+        if data_is_normalized:
+            diff = diff / self.edge_height
+        mask = data_x > self.edge_loc
+        data_y[mask] = data_y[mask] - diff[mask]
+        return data_y
+    
+    def fit_segment(self, data_x, data_y, range, order=1):
+        mask = (data_x < range[1]) & (data_x >= range[0])
+        x = data_x[mask]
+        y = data_y[mask]
+        p = np.polyfit(x, y, order)
+        return p
+    
+    def find_edge_height(self):
+        mu0 = np.poly1d(self.p_post)(self.edge_loc) - np.poly1d(self.p_pre)(self.edge_loc)
+        return mu0
     
     def save_state(self, path):
         np.save(path, self.__dict__)
@@ -62,43 +108,3 @@ def estimate_edge_location_and_width(data_x: np.ndarray, data_y: np.ndarray, x_d
         peak_loc = x_dense[peak_loc]
         peak_width = peak_width * dense_psize
     return peak_loc, peak_width
-
-
-def detilt_and_normalize(data_x, data_y, fit_ranges=None, return_fits=False, fits_to_apply=None):
-    """
-    Remove the background slope and normalize a XANES spectrum using its pre-edge and post-edge values.
-
-    :param data_x: ndarray. Energies in eV.
-    :param data_y: ndarray.
-    :return: ndarray. Processed spectrum.
-    """
-    if fits_to_apply is None:
-        if fit_ranges is None:
-            edge_loc, edge_width = estimate_edge_location_and_width(data_x, data_y)
-            range_pre = (data_x[0], edge_loc - edge_width * 3)
-            range_post = (edge_loc + edge_width * 3, data_x[-1])
-        else:
-            range_pre, range_post = fit_ranges
-            
-        # Fit pre-edge
-        mask = (data_x < range_pre[1]) & (data_x >= range_pre[0])
-        x = data_x[mask]
-        y = data_y[mask]
-        p_pre = np.polyfit(x, y, 1)
-
-        # Fit post-edge
-        mask = (data_x > range_post[0]) & (data_x <= range_post[1])
-        x = data_x[mask]
-        y = data_y[mask]
-        # p_post = np.polyfit(x, y, 1)
-        p_post = np.array([p_pre[0], np.mean(y - x * p_pre[0])])
-    else:
-        p_pre, p_post = fits_to_apply
-
-    data_corrected = data_y - data_x * p_pre[0] - p_pre[1]
-    edge_height = (p_post[1] - p_pre[1]) / np.sqrt(p_pre[0] ** 2 + 1)
-    data_corrected = data_corrected / edge_height
-
-    if return_fits:
-        return data_corrected, (p_pre, p_post)
-    return data_corrected
