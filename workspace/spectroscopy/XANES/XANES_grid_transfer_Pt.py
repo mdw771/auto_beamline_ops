@@ -136,7 +136,7 @@ class PtGridTransferTester(LTOGridTransferTester):
 
 
 if __name__ == '__main__':
-    normalizer = xanestools.XANESNormalizer(fit_ranges=((11400, 11500), (11650, 11850)))
+    normalizer = xanestools.XANESNormalizer(fit_ranges=((11400, 11500), (11650, 11850)), edge_loc=11566.0)
     
     set_random_seed(126)
     tester = PtGridTransferTester(
@@ -148,7 +148,7 @@ if __name__ == '__main__':
         grid_generation_method='redo_for_each',
         n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
     )
-    tester.build(normalizer=normalizer)
+    tester.build()
     tester.run()
     tester.post_analyze(normalizer=normalizer)
 
@@ -162,7 +162,7 @@ if __name__ == '__main__':
         grid_generation_method='init',
         n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
     )
-    tester.build(normalizer=normalizer)
+    tester.build()
     tester.run()
     tester.post_analyze(normalizer=normalizer)
 
@@ -178,6 +178,6 @@ if __name__ == '__main__':
         grid_intersect_tol=3.0,
         n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
     )
-    tester.build(normalizer=normalizer)
+    tester.build()
     tester.run()
     tester.post_analyze(normalizer=normalizer)

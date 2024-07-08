@@ -348,6 +348,15 @@ class LTOGridTransferTester:
             pd.read_csv(flist[0], index_col=None)['true_data'].to_numpy(),
             pd.read_csv(flist[-1], index_col=None)['true_data'].to_numpy(),
         ])
+        
+        # Normalize and detilt if normalizer is provided
+        if normalizer is not None:
+            normalizer.fit(to_numpy(self.test_energies_raw), self.test_data_all_spectra_raw[0])
+            ref_spectrum_fitting_estimated[0] = normalizer.apply(self.ref_spectra_x, ref_spectrum_fitting_estimated[0])
+            ref_spectrum_fitting_true[0] = normalizer.apply(self.ref_spectra_x, ref_spectrum_fitting_true[0])
+            normalizer.fit(to_numpy(self.test_energies_raw), self.test_data_all_spectra_raw[-1])
+            ref_spectrum_fitting_estimated[1] = normalizer.apply(self.ref_spectra_x, ref_spectrum_fitting_estimated[1])
+            ref_spectrum_fitting_true[1] = normalizer.apply(self.ref_spectra_x, ref_spectrum_fitting_true[1])
 
         for i, f in enumerate(flist):
             ind = int(re.findall('\d+', f)[-1])
@@ -393,6 +402,22 @@ class LTOGridTransferTester:
 
     @staticmethod
     def get_phase_transition_percentage(data, reference_spectra_for_fitting, return_fitting_residue=False, add_constant_term=False):
+        """
+        Calculate the phase transition percentage of a given spectrum using
+        least-squares fitting.
+
+        :param data: A 1D array of floats representing the spectrum to be analyzed.
+        :param reference_spectra_for_fitting: A 2D array of floats representing
+            the spectra to be used for fitting.
+        :param return_fitting_residue: A boolean indicating whether to return the
+            fitting residue, defaults to False.
+        :param add_constant_term: A boolean indicating whether to add a constant
+            term to the fitting matrix, defaults to False.
+        :return: If return_fitting_residue is False, returns a float representing
+            the phase transition percentage. If return_fitting_residue is True,
+            returns a tuple containing the phase transition percentage and the
+            fitting residue.
+        """
         amat = to_numpy(reference_spectra_for_fitting).T
         if add_constant_term:
             amat = np.concatenate(amat, np.ones([amat.shape[0], 1]))
@@ -419,7 +444,7 @@ if __name__ == '__main__':
         grid_generation_method='redo_for_each',
         n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
     )
-    tester.build(normalizer=normalizer)
+    tester.build()
     tester.run()
     tester.post_analyze(normalizer=normalizer)
     
@@ -434,7 +459,7 @@ if __name__ == '__main__':
         grid_generation_method='init',
         n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
     )
-    tester.build(normalizer=normalizer)
+    tester.build()
     tester.run()
     tester.post_analyze(normalizer=normalizer)
     
@@ -451,7 +476,7 @@ if __name__ == '__main__':
         grid_intersect_tol=3.0,
         n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
     )
-    tester.build(normalizer=normalizer)
+    tester.build()
     tester.run()
     tester.post_analyze(normalizer=normalizer)
 
@@ -466,7 +491,7 @@ if __name__ == '__main__':
         grid_generation_method='init',
         n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
     )
-    tester.build(normalizer=normalizer)
+    tester.build()
     tester.run()
     tester.post_analyze(normalizer=normalizer)
     
