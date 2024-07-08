@@ -29,7 +29,7 @@ class LTOGridTransferTester:
 
     def __init__(self, test_data_path, ref_spectra_data_path, output_dir='outputs',
                  grid_generation_method='init', grid_generation_spectra_indices=(0,), grid_intersect_tol=1.0,
-                 n_initial_measurements=10, n_target_measurements=40):
+                 n_initial_measurements=10, n_target_measurements=40, initialization_method='uniform'):
         self.test_data_path = test_data_path
         self.ref_spectra_data_path = ref_spectra_data_path
         self.test_data_all_spectra = None
@@ -45,6 +45,7 @@ class LTOGridTransferTester:
         self.grid_intersect_tol = grid_intersect_tol
         self.n_initial_measurements = n_initial_measurements
         self.n_target_measurements = n_target_measurements
+        self.initialization_method = initialization_method
         self.save_plots = True
         self.debug = False
         if not os.path.exists(self.output_dir):
@@ -146,11 +147,11 @@ class LTOGridTransferTester:
         )
         return configs
 
-    def run_acquisition_for_spectrum_index(self, ind, dataset='test'):
+    def run_acquisition_for_spectrum_index(self, ind, name_prefix='LTO_50C', dataset='test'):
         configs = self.get_generic_config()
 
         analyzer_configs = ExperimentAnalyzerConfig(
-            name='LTO_50C_index_{}'.format(ind),
+            name='{}_index_{}'.format(name_prefix, ind),
             output_dir=self.output_dir,
             n_plot_interval=5,
             save=self.save_plots
@@ -167,7 +168,8 @@ class LTOGridTransferTester:
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(self.test_energies, data)
         experiment.run(n_initial_measurements=self.n_initial_measurements,
-                       n_target_measurements=self.n_target_measurements)
+                       n_target_measurements=self.n_target_measurements,
+                       initial_measurement_method=self.initialization_method)
         if self.save_plots and dataset == 'test':
             x_measured, y_measured = experiment.guide.untransform_data(x=experiment.guide.data_x,
                                                                        y=experiment.guide.data_y)
@@ -308,42 +310,62 @@ class LTOGridTransferTester:
         ax.set_ylabel('RMS')
         plt.savefig(os.path.join(self.output_dir, 'rms_all_test_spectra.pdf'))
 
-    def analyze_phase_transition_percentages(self):
+    def calculate_phase_transition_percentages(self):
         indices = []
         percentages_estimated = []
         percentages_true = []
         fitting_residue_estimated = []
         flist = glob.glob(os.path.join(self.output_dir, 'estimated_data_ind_*.csv'))
         flist = np.array(flist)[np.argsort([int(re.findall('\d+', x)[-1]) for x in flist])]
+
+        ref_spectrum_fitting_estimated = np.stack([
+            pd.read_csv(flist[0], index_col=None)['estimated_data'].to_numpy(),
+            pd.read_csv(flist[-1], index_col=None)['estimated_data'].to_numpy(),
+        ])
+        ref_spectrum_fitting_true = np.stack([
+            pd.read_csv(flist[0], index_col=None)['true_data'].to_numpy(),
+            pd.read_csv(flist[-1], index_col=None)['true_data'].to_numpy(),
+        ])
+
         for f in flist:
             ind = int(re.findall('\d+', f)[-1])
             indices.append(ind)
             table = pd.read_csv(f, index_col=None)
             estimated_spectrum = table['estimated_data'].to_numpy()
             true_spectrum = table['true_data'].to_numpy()
-            p_estimated, r = self.get_phase_transition_percentage(estimated_spectrum, return_fitting_residue=True)
+            p_estimated, r = self.get_phase_transition_percentage(estimated_spectrum, ref_spectrum_fitting_estimated,
+                                                                  return_fitting_residue=True)
             percentages_estimated.append(p_estimated)
             fitting_residue_estimated.append(r)
-            p_true = self.get_phase_transition_percentage(true_spectrum)
+            p_true = self.get_phase_transition_percentage(true_spectrum, ref_spectrum_fitting_true)
             percentages_true.append(p_true)
 
         table = pd.DataFrame(data={'indices': indices,
                                    'percentages_estimated': percentages_estimated,
-                                   'percentages_true': percentages_true})
+                                   'percentages_true': percentages_true,
+                                   'fitting_residue_estimated': fitting_residue_estimated
+                                   })
+        return table
+
+    def analyze_phase_transition_percentages(self):
+        table = self.calculate_phase_transition_percentages()
         table.to_csv(os.path.join(self.output_dir, 'phase_transition_percentages.csv'), index=False)
 
         fig, ax = plt.subplots(1, 1)
-        ax.plot(indices, percentages_estimated, label='Estimated')
-        ax.plot(indices, percentages_true, label='True')
+        ax.plot(table['indices'], table['percentages_estimated'], label='Estimated')
+        ax.plot(table['indices'], table['percentages_true'], label='True')
         ax.legend()
         fig.savefig(os.path.join(self.output_dir, 'phase_transition_percentages.pdf'))
 
         fig, ax = plt.subplots(1, 1)
-        ax.plot(indices, fitting_residue_estimated)
+        ax.plot(table['indices'], table['fitting_residue_estimated'])
         fig.savefig(os.path.join(self.output_dir, 'fitting_residue.pdf'))
 
-    def get_phase_transition_percentage(self, data, return_fitting_residue=False):
-        amat = to_numpy(self.ref_spectra_y.T)
+    @staticmethod
+    def get_phase_transition_percentage(data, reference_spectra_for_fitting, return_fitting_residue=False, add_constant_term=False):
+        amat = to_numpy(reference_spectra_for_fitting).T
+        if add_constant_term:
+            amat = np.concatenate(amat, np.ones([amat.shape[0], 1]))
         bvec = data.reshape(-1, 1)
         xvec = np.matmul(np.linalg.pinv(amat), bvec)
         w = xvec.reshape(-1)
