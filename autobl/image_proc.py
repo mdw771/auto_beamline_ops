@@ -151,6 +151,7 @@ class DenseReconstructor:
         points: np.ndarray,
         values: np.ndarray,
         meshgrids: Tuple[np.ndarray, np.ndarray],
+        n_neighbors: int = None,
     ):
         """
         Reconstruct a dense image.
@@ -158,12 +159,13 @@ class DenseReconstructor:
         :param points: np.ndarray. A (N, 2) array of measured points.
         :param values: np.ndarray. A 1-D array of measured values.
         :param meshgrids:
+        :param n_neighbors: number of nearest neighbors for IDW reconstruction
         :return:
         """
         if self.method == "linear":
             recon = self.reconstruct_linear(points, values, meshgrids)
         elif self.method == "idw":
-            recon = self.reconstruct_idw(points, values, meshgrids)
+            recon = self.reconstruct_idw(points, values, meshgrids, n_neighbors)
         else:
             raise ValueError(f"{self.method} is not a valid method.")
         return recon
@@ -186,9 +188,11 @@ class DenseReconstructor:
         points: np.ndarray,
         values: np.ndarray,
         meshgrids: Tuple[np.ndarray, np.ndarray],
+        n_neighbors: int = None,
+        power: float = 2.0,
     ):
         """
-        Inverse distance weighted interpolation
+        Inverse distance weighted interpolation with nearest neighbors
 
         :param points: np.ndarray. points to interpolate between, shape (num
             interp points, dimension)
@@ -196,28 +200,110 @@ class DenseReconstructor:
             interp points,)
         :param meshgrids: Tuple[np.ndarray, np.ndarray]. grid to get
             interpolated values for
+        :param n_neighbors: number of nearest neighbors to use in the
+            reconstruction
         """
         # grid_y, grid_x = meshgrids
-        n_neighbors = (
-            4
-            if "n_neighbors" not in self.options.keys()
-            else self.options["n_neighbors"]
-        )
+        if n_neighbors is None:
+            n_neighbors = self.options.get("n_neighbors", 4)
+        if n_neighbors == -1:
+            # Complete reconstruction with all points
+            return self._idw(
+                points,
+                values,
+                np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids)),
+                power=self.options.get("power", 2.0),
+            ).reshape(meshgrids[0].shape)
         knn_engine = NearestNeighbors(n_neighbors=n_neighbors)
         knn_engine.fit(points)
 
         # Find nearest measured points for each queried point.
         queried_points = np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids))
-        nn_dists, nn_inds = knn_engine.kneighbors(queried_points)
-        nn_weights = self._compute_neighbor_weights(nn_dists)
+        nn_dists, nn_inds = knn_engine.kneighbors(queried_points, return_distance=True)
+        nn_weights = self._compute_neighbor_weights(nn_dists, power=power)
         nn_values = np.take(values, nn_inds)
 
         recon = np.sum(nn_values * nn_weights, axis=1)
         recon = recon.reshape(meshgrids[0].shape)
         return recon
 
+    def reconstruct_idw_grad(
+        self,
+        points: np.ndarray,
+        values: np.ndarray,
+        meshgrids: Tuple[np.ndarray, np.ndarray],
+        n_neighbors: int = None,
+        power: float = 2.0,
+    ):
+        """
+        Inverse distance weighted interpolation gradient with nearest neighbors
+
+        :param points: np.ndarray. points to interpolate between, shape (num
+            interp points, dimension)
+        :param values: np.ndarray. values to interpolate between, shape (num
+            interp points,)
+        :param meshgrids: Tuple[np.ndarray, np.ndarray]. grid to get
+            interpolated values for
+        :param n_neighbors: number of nearest neighbors to use in the
+            reconstruction
+        """
+        # grid_y, grid_x = meshgrids
+        if n_neighbors is None:
+            n_neighbors = self.options.get("n_neighbors", 4)
+        if n_neighbors == -1:
+            # Complete reconstruction with all points
+            return self._idw_grad(
+                points,
+                values,
+                np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids)),
+                power=self.options.get("power", 2.0),
+            ).reshape(meshgrids[0].shape)
+        knn_engine = NearestNeighbors(n_neighbors=n_neighbors)
+        knn_engine.fit(points)
+
+        # Find nearest measured points for each queried point.
+        queried_points = np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids))
+        nn_dists, nn_inds = knn_engine.kneighbors(queried_points, return_distance=True)
+        values = np.take(values, nn_inds)
+
+        grad = np.zeros((2, meshgrids[0].shape[0], meshgrids[0].shape[1]))
+
+        # correct for zero distance
+        mask = nn_dists == 0.0
+        nn_dists[np.sum(mask, axis=1) > 0, :] = np.inf
+        nn_dists[mask] = 1.0
+        # inverse distances from xi (axis = 0) to point (axis = 1)
+        inv_distances = 1 / nn_dists
+        sum_inv_distances = np.sum(inv_distances**power, axis=1)
+
+        inv_cubed = inv_distances ** (power + 2)
+        sum_val_inv_distances = np.sum(values * (inv_distances**power), axis=1)
+        val_inv_cubed = values * inv_distances ** (power + 2)
+        diff_x = queried_points[:, np.newaxis, 0] - points[nn_inds, 0]
+        diff_y = queried_points[:, np.newaxis, 1] - points[nn_inds, 1]
+
+        grad[0, :, :] = (
+            (
+                -sum_inv_distances * np.sum(val_inv_cubed * diff_x, axis=1)
+                + sum_val_inv_distances * np.sum(inv_cubed * diff_x, axis=1)
+            )
+            / (sum_inv_distances**2)
+        ).reshape(meshgrids[0].shape)
+
+        grad[1, :, :] = (
+            (
+                -sum_inv_distances * np.sum(val_inv_cubed * diff_y, axis=1)
+                + sum_val_inv_distances * np.sum(inv_cubed * diff_y, axis=1)
+            )
+            / (sum_inv_distances**2)
+        ).reshape(meshgrids[0].shape)
+
+        return grad
+
     @staticmethod
-    def _compute_neighbor_weights(neighbor_distances, power=2, eps=1e-7):
+    def _compute_neighbor_weights(
+        neighbor_distances: np.ndarray, power: float = 2.0
+    ) -> np.ndarray:
         """
         Calculating the weights for how each neighboring data point contributes
         to the reconstruction for the current location.
@@ -226,7 +312,11 @@ class DenseReconstructor:
         distance from teh current point. Next, the weights are normalized so
         that the total weight sums up to 1 for each reconstruction point.
         """
-        unnormalized_weights = 1.0 / (np.power(neighbor_distances, power) + eps)
+        dists = np.copy(neighbor_distances)
+        mask = dists == 0.0
+        dists[np.sum(mask, axis=1) > 0, :] = np.inf
+        dists[mask] = 1.0
+        unnormalized_weights = 1.0 / (np.power(dists, power))
         sum_over_row = np.sum(unnormalized_weights, axis=1, keepdims=True)
         weights = unnormalized_weights / sum_over_row
         return weights
@@ -235,7 +325,7 @@ class DenseReconstructor:
     def _idw(
         points: np.ndarray, values: np.ndarray, xi: np.ndarray, power: float = 2.0
     ) -> np.ndarray:
-        """Inverse distance weighted interpolation
+        """Inverse distance weighted interpolation for all points
 
         Interpolate by weighting by inverse distance
 
@@ -247,17 +337,62 @@ class DenseReconstructor:
             sample points, dimension)
         :return: np.ndarray. interpolated values, shape (num sample points,)
         """
-        # Get inverse distances from sample points -> interp points
-        inv_distances = 1 / (cdist(xi, points) ** power)
-        # Get sum of inverse distances for each sample
+        dists = cdist(xi, points)
+        # correct for zero distance
+        mask = dists == 0.0
+        dists[np.sum(mask, axis=1) > 0, :] = np.inf
+        dists[mask] = 1.0
+        # inverse distances from xi (axis = 0) to point (axis = 1)
+        inv_distances = 1 / (dists**power)
         sum_inv_distances = np.sum(inv_distances, axis=1)
-        # For sample points == interp points...
-        mask = ~np.isfinite(inv_distances)
-        # ...set some values to 0.0...
-        inv_distances[~np.isfinite(sum_inv_distances), :] = 0.0
-        # ...but make sure the right values are non-zero
-        inv_distances[mask] = 1.0
-        sum_inv_distances[~np.isfinite(sum_inv_distances)] = 1.0
         # Multiply values by inverse distances and divide by sum
         vi = np.sum(values[np.newaxis, :] * inv_distances, axis=1) / sum_inv_distances
         return vi
+
+    @staticmethod
+    def _idw_grad(
+        points: np.ndarray, values: np.ndarray, xi: np.ndarray, power: float = 2.0
+    ) -> np.ndarray:
+        """Gradient of inverse distance weighted interpolation for all points
+
+        Interpolate by weighting by inverse distance
+
+        :param points: np.ndarray. points to interpolate between, shape (num interp
+            points, dimension)
+        :param values: np.ndarray. values to interpolate between, shape (num interp
+            points,)
+        :param xi: np.ndarray. points to get gradient values at, shape (num
+            sample points, dimension)
+        :return: np.ndarray. gradient values, shape (num sample points,
+            dimension)
+        """
+        grad = np.zeros(xi.shape)
+        dists = cdist(xi, points)
+
+        # correct for zero distance
+        mask = dists == 0.0
+        dists[np.sum(mask, axis=1) > 0, :] = np.inf
+        dists[mask] = 1.0
+        # inverse distances from xi (axis = 0) to point (axis = 1)
+        inv_distances = 1 / dists
+        sum_inv_distances = np.sum(inv_distances**power, axis=1)
+
+        inv_cubed = inv_distances ** (power + 2)
+        sum_val_inv_distances = np.sum(
+            values[np.newaxis, :] * (inv_distances**power), axis=1
+        )
+        val_inv_cubed = values[np.newaxis, :] * inv_distances ** (power + 2)
+        diff_x = xi[:, np.newaxis, 0] - points[np.newaxis, :, 0]
+        diff_y = xi[:, np.newaxis, 1] - points[np.newaxis, :, 1]
+
+        grad[:, 0] = (
+            -sum_inv_distances * np.sum(val_inv_cubed * diff_x, axis=1)
+            + sum_val_inv_distances * np.sum(inv_cubed * diff_x, axis=1)
+        ) / (sum_inv_distances**2)
+
+        grad[:, 1] = (
+            -sum_inv_distances * np.sum(val_inv_cubed * diff_y, axis=1)
+            + sum_val_inv_distances * np.sum(inv_cubed * diff_y, axis=1)
+        ) / (sum_inv_distances**2)
+
+        return grad

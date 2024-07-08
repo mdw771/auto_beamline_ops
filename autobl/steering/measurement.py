@@ -498,7 +498,7 @@ def get_interpolated_values_from_image(
             probe_image = image * probe
     sampled_vals = ndi.map_coordinates(
         probe_image,
-        point_list.T + shift[:, np.newaxis],
+        np.transpose(point_list) + shift[:, np.newaxis],
         order=1,
         mode="nearest",
     )
