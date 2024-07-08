@@ -20,12 +20,11 @@ from autobl.steering.optimization import *
 from autobl.steering.experiment import SimulatedScanningExperiment
 from autobl.steering.io_util import *
 from autobl.util import *
+import autobl.tools.spectroscopy.xanes as xanestools
 
 from XANES_grid_transfer_LTO import LTOGridTransferTester
 
 torch.set_default_device('cpu')
-
-set_random_seed(123)
 
 
 class PtGridTransferTester(LTOGridTransferTester):
@@ -34,35 +33,49 @@ class PtGridTransferTester(LTOGridTransferTester):
         super().__init__(*args, **kwargs)
 
     @staticmethod
-    def load_data_from_nor(path):
+    def load_data_from_nor(path, normalizer=None, crop=True):
         table = read_nor(path)
-        data = table['norm'].to_numpy()
+        data = table['xmu'].to_numpy()
         energies = table['e'].to_numpy()
         _, unique_inds = np.unique(energies, return_index=True)
         unique_inds = np.sort(unique_inds)
         data = data[unique_inds]
         energies = energies[unique_inds]
+        
+        if normalizer is not None:
+            normalizer.fit(energies, data)
+            data = normalizer.apply(energies, data)
+        
+        if crop:
+            # Only keep 11400 - 11700 eV
+            mask = (energies >= 11400) & (energies <= 11700)
+            data = data[mask]
+            energies = energies[mask]
+        
         return data, energies
 
     @staticmethod
-    def load_all_data(folder):
-        flist = glob.glob(os.path.join(folder, '*.nor'))
+    def load_all_data(folder, filename_pattern, normalizer=None, crop=True):
+        flist = glob.glob(os.path.join(folder, filename_pattern))
         flist.sort()
         data_all_spectra = []
         energies = None
 
         for f in flist:
-            d, energies = PtGridTransferTester.load_data_from_nor(f)
+            d, energies = PtGridTransferTester.load_data_from_nor(f, normalizer=normalizer, crop=crop)
             data_all_spectra.append(d)
         data_all_spectra = np.array(data_all_spectra)
         energies = torch.tensor(energies)
         return data_all_spectra, energies
 
-    def load_data(self):
-        data_all_spectra, self.test_energies = self.load_all_data(self.test_data_path)
+    def load_data(self, normalizer=False):
+        data_all_spectra_raw, self.test_energies_raw = self.load_all_data(self.test_data_path, filename_pattern=self.test_data_filename_pattern, normalizer=None, crop=False)
+        data_all_spectra, self.test_energies = self.load_all_data(self.test_data_path, filename_pattern=self.test_data_filename_pattern, normalizer=normalizer)
         # Use the first and last spectra as references and the rest as test set
         self.test_data_all_spectra = data_all_spectra[1:-1]
         self.ref_data_all_spectra = data_all_spectra[np.array([0, -1])]
+        self.test_data_all_spectra_raw = data_all_spectra_raw[1:-1]
+        self.ref_data_all_spectra_raw = data_all_spectra_raw[np.array([0, -1])]
         self.ref_spectra_x = self.test_energies
 
         ref_spectra_0 = torch.tensor(self.ref_data_all_spectra[0])
@@ -111,7 +124,7 @@ class PtGridTransferTester(LTOGridTransferTester):
             acqf_weight_func_post_edge_width=1.0,
             stopping_criterion_configs=StoppingCriterionConfig(
                 method='max_uncertainty',
-                params={'threshold': 0.02}
+                params={'threshold': 0.01}
             ),
             use_spline_interpolation_for_posterior_mean=True
         )
@@ -123,37 +136,48 @@ class PtGridTransferTester(LTOGridTransferTester):
 
 
 if __name__ == '__main__':
+    normalizer = xanestools.XANESNormalizer(fit_ranges=((11400, 11500), (11650, 11850)), edge_loc=11566.0)
+    
+    set_random_seed(126)
     tester = PtGridTransferTester(
-        test_data_path='data/raw/Pt-XANES',
-        ref_spectra_data_path='data/raw/Pt-XANES',
+        test_data_path='data/raw/Pt-XANES/Pt_xmu',
+        test_data_filename_pattern="*.xmu",
+        ref_spectra_data_path='data/raw/Pt-XANES/Pt_xmu',
+        ref_data_filename_pattern="*.xmu",
         output_dir='outputs/grid_transfer_Pt/grid_redoForEach/Pt',
         grid_generation_method='redo_for_each',
-        n_initial_measurements=20, n_target_measurements=60, initialization_method='random'
+        n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
     )
     tester.build()
     tester.run()
-    tester.post_analyze()
+    tester.post_analyze(normalizer=normalizer)
 
+    set_random_seed(126)
     tester = PtGridTransferTester(
-        test_data_path='data/raw/Pt-XANES',
-        ref_spectra_data_path='data/raw/Pt-XANES',
+        test_data_path='data/raw/Pt-XANES/Pt_xmu',
+        test_data_filename_pattern="*.xmu",
+        ref_spectra_data_path='data/raw/Pt-XANES/Pt_xmu',
+        ref_data_filename_pattern="*.xmu",
         output_dir='outputs/grid_transfer_Pt/grid_initOfSelf/Pt',
         grid_generation_method='init',
-        n_initial_measurements=20, n_target_measurements=60, initialization_method='random'
+        n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
     )
     tester.build()
     tester.run()
-    tester.post_analyze()
+    tester.post_analyze(normalizer=normalizer)
 
+    set_random_seed(126)
     tester = PtGridTransferTester(
-        test_data_path='data/raw/Pt-XANES',
-        ref_spectra_data_path='data/raw/Pt-XANES',
+        test_data_path='data/raw/Pt-XANES/Pt_xmu',
+        test_data_filename_pattern="*.xmu",
+        ref_spectra_data_path='data/raw/Pt-XANES/Pt_xmu',
+        ref_data_filename_pattern="*.xmu",
         output_dir='outputs/grid_transfer_Pt/grid_selectedRef/Pt',
         grid_generation_method='ref',
         grid_generation_spectra_indices=(0, 1),
         grid_intersect_tol=3.0,
-        n_initial_measurements=20, n_target_measurements=60, initialization_method='random'
+        n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
     )
     tester.build()
     tester.run()
-    tester.post_analyze()
+    tester.post_analyze(normalizer=normalizer)

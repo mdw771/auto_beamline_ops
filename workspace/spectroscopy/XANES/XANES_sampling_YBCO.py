@@ -16,16 +16,13 @@ from autobl.steering.acquisition import *
 from autobl.steering.optimization import *
 from autobl.steering.experiment import SimulatedScanningExperiment
 from autobl.steering.guide import *
+from autobl.steering.io_util import *
+from autobl.tools.spectroscopy.xanes import XANESNormalizer
 from autobl.util import *
 
 torch.set_default_device('cpu')
 
 set_random_seed(124)
-
-data_path = 'data/raw/YBCO/YBCO3data.csv'
-data_all_spectra = pd.read_csv(data_path, header=0)
-# Only keep 8920 - 9080 eV
-data_all_spectra = data_all_spectra.iloc[14:232]
 
 def linear_fit(basis_list, data):
     a = np.stack([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)]).T
@@ -34,19 +31,33 @@ def linear_fit(basis_list, data):
     y_fit = (a @ x).reshape(-1)
     return y_fit
 
-data = data_all_spectra['YBCO_epararb.0001'].to_numpy()
-ref_spectra_0 = torch.tensor(data_all_spectra['YBCO_epara.0001'].to_numpy())
-ref_spectra_1 = torch.tensor(data_all_spectra['YBCO_eparc.0001'].to_numpy())
-energies = data_all_spectra['energy'].to_numpy()
+dataset = YBCORawDataset('data/raw/YBCO/YBCO_epararb.0001')
+data = dataset[0]
+energies = dataset.energies_ev
+ref_spectra_0 = YBCORawDataset('data/raw/YBCO/YBCO_epara.0001')[0]
+ref_spectra_1 = YBCORawDataset('data/raw/YBCO/YBCO_eparc.0001')[0]
+
+# Fit detilter and normalizer
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(to_numpy(energies), data, label='data')
+plt.show()
+xanes_normalizer = XANESNormalizer()
+xanes_normalizer.fit(energies, data, fit_ranges=((8788, 8914), (9401, 10000)))
+
+# Only keep 8920 - 9080 eV
+data = data[14:232]
+ref_spectra_0 = torch.tensor(ref_spectra_0[14:232])
+ref_spectra_1 = torch.tensor(ref_spectra_1[14:232])
+energies = energies[14:232]
 energies = torch.tensor(energies)
 # y_fit = linear_fit([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)], data)
-# fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-# ax.plot(to_numpy(energies), data, label='data')
+fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+ax.plot(to_numpy(energies), data, label='data')
 # ax.plot(to_numpy(energies), to_numpy(ref_spectra_0), label='ref1')
 # ax.plot(to_numpy(energies), to_numpy(ref_spectra_1), label='ref2')
 # ax.plot(to_numpy(energies), y_fit, label='fit', linestyle='--')
 # plt.legend()
-# plt.show()
+plt.show()
 
 ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
 ref_spectra_x = energies
@@ -89,27 +100,28 @@ configs = XANESExperimentGuideConfig(
     acqf_weight_func_post_edge_width=1.0,
     stopping_criterion_configs=StoppingCriterionConfig(
         method='max_uncertainty',
-        params={'threshold': 0.05}
+        params={'threshold': 0.03}
     ),
     use_spline_interpolation_for_posterior_mean=True
 )
 
 analyzer_configs = ExperimentAnalyzerConfig(
     name='YBCO3data',
-    output_dir='outputs/random_init',
+    output_dir='outputs/YBCO_raw_randInit',
     n_plot_interval=5
 )
 
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
 experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+xanes_normalizer.save_state('outputs/YBCO_raw_randInit/normalizer_state.npy')
 
 
 if True:
     # No acquisition reweighting
     set_random_seed(124)
     configs.n_updates_create_acqf_weight_func = None
-    analyzer_configs.output_dir = 'outputs/random_init_no_reweighting'
+    analyzer_configs.output_dir = 'outputs/YBCO_raw_randInit_noReweighting'
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
@@ -119,7 +131,7 @@ if True:
     configs.acquisition_function_class = PosteriorStandardDeviation
     configs.acquisition_function_params = {}
     configs.stopping_criterion_configs = None
-    analyzer_configs.output_dir = 'outputs/random_init_posterior_stddev'
+    analyzer_configs.output_dir = 'outputs/YBCO_raw_randInit_posteriorStddev'
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
@@ -128,7 +140,7 @@ if True:
     set_random_seed(124)
     configs.n_updates_create_acqf_weight_func = None
     configs.stopping_criterion_configs = None
-    analyzer_configs.output_dir = 'outputs/random_init_uniform_sampling'
+    analyzer_configs.output_dir = 'outputs/YBCO_raw_randInit_uniformSampling'
     experiment = SimulatedScanningExperiment(configs, guide_class=UniformSamplingExperimentGuide,
                                              run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)

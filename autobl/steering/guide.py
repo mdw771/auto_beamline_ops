@@ -16,6 +16,7 @@ from autobl.steering.configs import *
 from autobl.steering.acquisition import PosteriorStandardDeviationDerivedAcquisition
 from autobl.steering.model import ProjectedSpaceSingleTaskGP
 from autobl.util import *
+import autobl.tools.spectroscopy.xanes as xanestools
 
 
 class StoppingCriterion:
@@ -570,14 +571,11 @@ class XANESExperimentGuide(GPExperimentGuide):
             x_dense = np.linspace(0, 1, len(x_init) * 10)
         else:
             x_dense = np.linspace(x_dat[0], x_dat[-1], len(x_init) * 10)
-        y_dense = scipy.interpolate.CubicSpline(x_dat, y_dat)(x_dense)
-        grad_y = (y_dense[2:] - y_dense[:-2]) / (x_dense[2:] - x_dense[:-2])
         dense_psize = x_dense[1] - x_dense[0]
 
-        peak_locs, peak_properties = scipy.signal.find_peaks(grad_y, height=grad_y.max() * 0.5, width=1)
-        edge_ind = np.argmax(peak_properties['peak_heights'])
-        peak_loc = peak_locs[edge_ind]
-        peak_width = peak_properties['widths'][edge_ind]
+        # Returned values have the same unit as x_init.
+        peak_loc, peak_width = xanestools.estimate_edge_location_and_width(x_dat, y_dat, x_dense=x_dense,
+                                                                           return_in_pixel_unit=True)
 
         # Convert peak location and width from pixels to desired unit.
         if return_normalized_values and not run_in_transformed_space:

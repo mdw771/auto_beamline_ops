@@ -15,20 +15,33 @@ from autobl.steering.acquisition import *
 from autobl.steering.optimization import *
 from autobl.steering.experiment import SimulatedScanningExperiment
 from autobl.util import *
+from autobl.steering.guide import *
+from autobl.steering.io_util import LTORawDataset
+import autobl.tools.spectroscopy.xanes as xanestools
 
 torch.set_default_device('cpu')
 
 set_random_seed(123)
 
-data_path = 'data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv'
-data_all_spectra = pd.read_csv(data_path, header=None)
+dataset = LTORawDataset('data/raw/LiTiO_XANES/rawdata', filename_pattern="LTOsample3.[0-9]*")
+data_all_spectra = dataset.data
+energies = dataset.energies_ev
+data = data_all_spectra[len(data_all_spectra) // 2]
 
-data = data_all_spectra.iloc[len(data_all_spectra) // 2].to_numpy()
-energies = data_all_spectra.iloc[0].to_numpy()
+plt.figure()
+plt.plot(energies, data)
+plt.show()
+
+normalizer = xanestools.XANESNormalizer()
+normalizer.fit(energies, data, fit_ranges=((4900, 4950), (5100, 5200)))
+
+mask = (energies >= 4936) & (energies <= 5006)
+data_all_spectra = data_all_spectra[:, mask]
+data = data_all_spectra[len(data_all_spectra) // 2]
+energies = energies[mask]
 energies = torch.tensor(energies)
-
-ref_spectra_0 = torch.tensor(data_all_spectra.iloc[1].to_numpy())
-ref_spectra_1 = torch.tensor(data_all_spectra.iloc[-1].to_numpy())
+ref_spectra_0 = torch.tensor(data_all_spectra[0])
+ref_spectra_1 = torch.tensor(data_all_spectra[-1])
 ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
 ref_spectra_x = energies
 
@@ -68,27 +81,27 @@ configs = XANESExperimentGuideConfig(
     
     stopping_criterion_configs=StoppingCriterionConfig(
         method='max_uncertainty',
-        params={'threshold': 0.05}
+        params={'threshold': 0.01}
     ),
     use_spline_interpolation_for_posterior_mean=True
 )
 
 analyzer_configs = ExperimentAnalyzerConfig(
     name='Sample1_50C_XANES',
-    output_dir='outputs/random_init',
+    output_dir='outputs/LTO_raw_randInit',
     n_plot_interval=5
 )
+
+normalizer.save_state('outputs/LTO_raw_randInit/normalizer_state.npy')
 
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
 experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
 
-
-
 if True:
     set_random_seed(124)
     configs.n_updates_create_acqf_weight_func = None
-    analyzer_configs.output_dir = 'outputs/random_init_no_reweighting'
+    analyzer_configs.output_dir = 'outputs/LTO_raw_randInit_noReweighting'
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
@@ -97,7 +110,17 @@ if True:
     configs.acquisition_function_class = PosteriorStandardDeviation
     configs.acquisition_function_params = {}
     configs.stopping_criterion_configs = None
-    analyzer_configs.output_dir = 'outputs/random_init_posterior_stddev'
+    analyzer_configs.output_dir = 'outputs/LTO_raw_randInit_posteriorStddev'
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
+    experiment.build(energies, data)
+    experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
+
+    # Uniform sampling
+    set_random_seed(124)
+    configs.n_updates_create_acqf_weight_func = None
+    configs.stopping_criterion_configs = None
+    analyzer_configs.output_dir = 'outputs/LTO_raw_randInit_uniformSampling'
+    experiment = SimulatedScanningExperiment(configs, guide_class=UniformSamplingExperimentGuide,
+                                            run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')

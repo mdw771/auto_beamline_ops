@@ -18,20 +18,22 @@ from autobl.steering.measurement import *
 from autobl.steering.acquisition import *
 from autobl.steering.optimization import *
 from autobl.steering.experiment import SimulatedScanningExperiment
+from autobl.steering.io_util import *
 from autobl.util import *
+import autobl.tools.spectroscopy.xanes as xanestools
 
 torch.set_default_device('cpu')
-
-set_random_seed(123)
 
 
 class LTOGridTransferTester:
 
-    def __init__(self, test_data_path, ref_spectra_data_path, output_dir='outputs',
+    def __init__(self, test_data_path, test_data_filename_pattern, ref_spectra_data_path, ref_data_filename_pattern, output_dir='outputs',
                  grid_generation_method='init', grid_generation_spectra_indices=(0,), grid_intersect_tol=1.0,
                  n_initial_measurements=10, n_target_measurements=40, initialization_method='uniform'):
         self.test_data_path = test_data_path
         self.ref_spectra_data_path = ref_spectra_data_path
+        self.test_data_filename_pattern = test_data_filename_pattern
+        self.ref_data_filename_pattern = ref_data_filename_pattern
         self.test_data_all_spectra = None
         self.test_energies = None
         self.ref_data_all_spectra = None
@@ -46,6 +48,7 @@ class LTOGridTransferTester:
         self.n_initial_measurements = n_initial_measurements
         self.n_target_measurements = n_target_measurements
         self.initialization_method = initialization_method
+        self.supplied_initial_points = None
         self.save_plots = True
         self.debug = False
         if not os.path.exists(self.output_dir):
@@ -55,6 +58,8 @@ class LTOGridTransferTester:
         d = {
             'test_data_path': self.test_data_path,
             'ref_spectra_data_path': self.ref_spectra_data_path,
+            'test_data_filename_pattern': self.test_data_filename_pattern,
+            'ref_data_filename_pattern': self.ref_data_filename_pattern,
             'output_dir': self.output_dir,
             'grid_generation_method': self.grid_generation_method,
             'grid_generation_spectra_indices': self.grid_generation_spectra_indices,
@@ -66,22 +71,36 @@ class LTOGridTransferTester:
             json.dump(d, f, indent=4, separators=(',', ': '))
 
     @staticmethod
-    def load_data_from_csv(path):
-        table = pd.read_csv(path, header=None)
-        data_all_spectra = table.iloc[1:].to_numpy()
-        energies = torch.tensor(table.iloc[0].to_numpy())
+    def load_data_from_csv(path, filename_pattern, normalizer=False, crop=True):
+        dataset = LTORawDataset(path, filename_pattern=filename_pattern)
+        energies = dataset.energies_ev
+        data_all_spectra = dataset.data
+        if normalizer is not None:
+            for i in range(len(data_all_spectra)):
+                normalizer.fit(energies, data_all_spectra[i])
+                data_all_spectra[i] = normalizer.apply(energies, data_all_spectra[i])
+        if crop:
+            mask = (energies >= 4936) & (energies <= 5006)
+            data_all_spectra = data_all_spectra[:, mask]
+            energies = energies[mask]
+        energies = torch.tensor(energies)
         return data_all_spectra, energies
 
-    def load_data(self):
-        self.test_data_all_spectra, self.test_energies = self.load_data_from_csv(self.test_data_path)
-
-        self.ref_data_all_spectra, self.ref_spectra_x = self.load_data_from_csv(self.ref_spectra_data_path)
+    def load_data(self, normalizer=None):
+        self.test_data_all_spectra_raw, self.test_energies_raw = self.load_data_from_csv(self.test_data_path, filename_pattern=self.test_data_filename_pattern, normalizer=None, crop=False)
+        self.ref_data_all_spectra_raw, self.ref_spectra_x_raw = self.load_data_from_csv(self.ref_spectra_data_path, filename_pattern=self.ref_data_filename_pattern, normalizer=None, crop=False)
+        self.test_data_all_spectra, self.test_energies = self.load_data_from_csv(self.test_data_path, filename_pattern=self.test_data_filename_pattern, normalizer=normalizer)
+        self.ref_data_all_spectra, self.ref_spectra_x = self.load_data_from_csv(self.ref_spectra_data_path, filename_pattern=self.ref_data_filename_pattern, normalizer=normalizer)
         ref_spectra_0 = torch.tensor(self.ref_data_all_spectra[0])
         ref_spectra_1 = torch.tensor(self.ref_data_all_spectra[-1])
         self.ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
 
         if self.save_plots:
             self._plot_data()
+
+    def create_initial_points(self):
+        energies = to_numpy(self.test_energies).reshape(-1)
+        self.supplied_initial_points = np.random.rand(self.n_initial_measurements) * (energies[-1] - energies[0]) + energies[0]
 
     def _plot_data(self):
         fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
@@ -140,10 +159,10 @@ class LTOGridTransferTester:
                               },
             stopping_criterion_configs=StoppingCriterionConfig(
                 method='max_uncertainty',
-                params={'threshold': 0.02},
+                params={'threshold': 0.01},
                 n_updates_to_begin=6,
             ),
-            use_spline_interpolation_for_posterior_mean=True
+            use_spline_interpolation_for_posterior_mean=False
         )
         return configs
 
@@ -169,7 +188,8 @@ class LTOGridTransferTester:
         experiment.build(self.test_energies, data)
         experiment.run(n_initial_measurements=self.n_initial_measurements,
                        n_target_measurements=self.n_target_measurements,
-                       initial_measurement_method=self.initialization_method)
+                       initial_measurement_method=self.initialization_method,
+                       supplied_initial_points=self.supplied_initial_points)
         if self.save_plots and dataset == 'test':
             x_measured, y_measured = experiment.guide.untransform_data(x=experiment.guide.data_x,
                                                                        y=experiment.guide.data_y)
@@ -270,8 +290,10 @@ class LTOGridTransferTester:
         self.results['spectrum_index'].append(ind)
         self.results['rms'].append(rms)
 
-    def build(self):
-        self.load_data()
+    def build(self, normalizer=None):
+        self.load_data(normalizer=normalizer)
+        if self.initialization_method == 'supplied':
+            self.create_initial_points()
         self.save_metadata()
 
     def run(self):
@@ -284,9 +306,9 @@ class LTOGridTransferTester:
             metric_val = rms(data_interp, self.test_data_all_spectra[ind])
             self.log_data(ind, metric_val)
 
-    def post_analyze(self):
+    def post_analyze(self, normalizer=None):
         self.analyze_rms()
-        self.analyze_phase_transition_percentages()
+        self.analyze_phase_transition_percentages(normalizer=normalizer)
 
     def analyze_rms(self):
         indices = []
@@ -310,7 +332,7 @@ class LTOGridTransferTester:
         ax.set_ylabel('RMS')
         plt.savefig(os.path.join(self.output_dir, 'rms_all_test_spectra.pdf'))
 
-    def calculate_phase_transition_percentages(self):
+    def calculate_phase_transition_percentages(self, normalizer=None):
         indices = []
         percentages_estimated = []
         percentages_true = []
@@ -326,13 +348,30 @@ class LTOGridTransferTester:
             pd.read_csv(flist[0], index_col=None)['true_data'].to_numpy(),
             pd.read_csv(flist[-1], index_col=None)['true_data'].to_numpy(),
         ])
+        
+        # Normalize and detilt if normalizer is provided
+        if normalizer is not None:
+            normalizer.fit(to_numpy(self.test_energies_raw), self.test_data_all_spectra_raw[0])
+            ref_spectrum_fitting_estimated[0] = normalizer.apply(self.ref_spectra_x, ref_spectrum_fitting_estimated[0])
+            ref_spectrum_fitting_true[0] = normalizer.apply(self.ref_spectra_x, ref_spectrum_fitting_true[0])
+            normalizer.fit(to_numpy(self.test_energies_raw), self.test_data_all_spectra_raw[-1])
+            ref_spectrum_fitting_estimated[1] = normalizer.apply(self.ref_spectra_x, ref_spectrum_fitting_estimated[1])
+            ref_spectrum_fitting_true[1] = normalizer.apply(self.ref_spectra_x, ref_spectrum_fitting_true[1])
 
-        for f in flist:
+        for i, f in enumerate(flist):
             ind = int(re.findall('\d+', f)[-1])
             indices.append(ind)
             table = pd.read_csv(f, index_col=None)
+            energies = table['energy'].to_numpy()
             estimated_spectrum = table['estimated_data'].to_numpy()
             true_spectrum = table['true_data'].to_numpy()
+            
+            # Normalize and detilt if normalizer is provided
+            if normalizer is not None:
+                normalizer.fit(to_numpy(self.test_energies_raw), self.test_data_all_spectra_raw[i])
+                estimated_spectrum = normalizer.apply(energies, estimated_spectrum)
+                true_spectrum = normalizer.apply(energies, true_spectrum)
+            
             p_estimated, r = self.get_phase_transition_percentage(estimated_spectrum, ref_spectrum_fitting_estimated,
                                                                   return_fitting_residue=True)
             percentages_estimated.append(p_estimated)
@@ -347,8 +386,8 @@ class LTOGridTransferTester:
                                    })
         return table
 
-    def analyze_phase_transition_percentages(self):
-        table = self.calculate_phase_transition_percentages()
+    def analyze_phase_transition_percentages(self, normalizer=None):
+        table = self.calculate_phase_transition_percentages(normalizer=normalizer)
         table.to_csv(os.path.join(self.output_dir, 'phase_transition_percentages.csv'), index=False)
 
         fig, ax = plt.subplots(1, 1)
@@ -363,6 +402,22 @@ class LTOGridTransferTester:
 
     @staticmethod
     def get_phase_transition_percentage(data, reference_spectra_for_fitting, return_fitting_residue=False, add_constant_term=False):
+        """
+        Calculate the phase transition percentage of a given spectrum using
+        least-squares fitting.
+
+        :param data: A 1D array of floats representing the spectrum to be analyzed.
+        :param reference_spectra_for_fitting: A 2D array of floats representing
+            the spectra to be used for fitting.
+        :param return_fitting_residue: A boolean indicating whether to return the
+            fitting residue, defaults to False.
+        :param add_constant_term: A boolean indicating whether to add a constant
+            term to the fitting matrix, defaults to False.
+        :return: If return_fitting_residue is False, returns a float representing
+            the phase transition percentage. If return_fitting_residue is True,
+            returns a tuple containing the phase transition percentage and the
+            fitting residue.
+        """
         amat = to_numpy(reference_spectra_for_fitting).T
         if add_constant_term:
             amat = np.concatenate(amat, np.ones([amat.shape[0], 1]))
@@ -378,72 +433,65 @@ class LTOGridTransferTester:
 
 
 if __name__ == '__main__':
+    normalizer = xanestools.XANESNormalizer(fit_ranges=((4900, 4950), (5100, 5200)), edge_loc=4983)
+    
+    set_random_seed(164)
+    
     tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_redoForEach/Sample1_50C',
+        test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample3.[0-9]*",
+        ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
+        output_dir='outputs/grid_transfer_LTO/grid_redoForEach/50C',
         grid_generation_method='redo_for_each',
-        n_initial_measurements=10, n_target_measurements=40
+        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
     )
     tester.build()
     tester.run()
-    tester.post_analyze()
+    tester.post_analyze(normalizer=normalizer)
+    
+    #----------------------------------------------
+    
+    set_random_seed(1634)
 
     tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_redoForEach/Sample2_60C',
-        grid_generation_method='redo_for_each',
-        n_initial_measurements=10, n_target_measurements=40
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze()
-
-    tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_initOfSelf/Sample1_50C',
+        test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample3.[0-9]*",
+        ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
+        output_dir='outputs/grid_transfer_LTO/grid_initOfSelf/50C',
         grid_generation_method='init',
-        n_initial_measurements=10, n_target_measurements=40
+        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
     )
     tester.build()
     tester.run()
-    tester.post_analyze()
+    tester.post_analyze(normalizer=normalizer)
+    
+    #----------------------------------------------
+    
+    set_random_seed(134)
 
     tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_initOfSelf/Sample2_60C',
-        grid_generation_method='init',
-        n_initial_measurements=10, n_target_measurements=40
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze()
-
-    tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample1_50C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_selectedRef/Sample1_50C',
+        test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample3.[0-9]*",
+        ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
+        output_dir='outputs/grid_transfer_LTO/grid_selectedRef/50C',
         grid_generation_method='ref',
         grid_generation_spectra_indices=(0, 5, 8, 12),
         grid_intersect_tol=3.0,
-        n_initial_measurements=10, n_target_measurements=40
+        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
     )
     tester.build()
     tester.run()
-    tester.post_analyze()
+    tester.post_analyze(normalizer=normalizer)
+
+    #------------------------------------------------
+    # Generate ref data plot
+    set_random_seed(134)
 
     tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample2_60C_XANES.csv',
-        ref_spectra_data_path='data/raw/LiTiO_XANES/dataanalysis/Originplots/Sample3_70C_XANES.csv',
-        output_dir='outputs/grid_transfer/grid_selectedRef/Sample2_60C',
-        grid_generation_method='ref',
-        grid_generation_spectra_indices=(0, 5, 8, 12),
-        grid_intersect_tol=3.0,
-        n_initial_measurements=10, n_target_measurements=40
+        test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample2.[0-9]*",
+        ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
+        output_dir='outputs/grid_transfer_LTO/grid_initOfSelf/70C',
+        grid_generation_method='init',
+        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
     )
     tester.build()
     tester.run()
-    tester.post_analyze()
+    tester.post_analyze(normalizer=normalizer)
+    
