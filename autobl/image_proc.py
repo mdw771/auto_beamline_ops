@@ -324,7 +324,9 @@ class Reconstructor:
 
     @staticmethod
     def _compute_neighbor_weights(
-        neighbor_distances: np.ndarray, power: float = 2.0
+        neighbor_distances: np.ndarray,
+        power: float = 2.0,
+        epsilon: float = 1e-7,
     ) -> np.ndarray:
         """
         Calculating the weights for how each neighboring data point contributes
@@ -334,11 +336,11 @@ class Reconstructor:
         distance from teh current point. Next, the weights are normalized so
         that the total weight sums up to 1 for each reconstruction point.
         """
-        dists = np.copy(neighbor_distances)
-        mask = dists == 0.0
-        dists[np.sum(mask, axis=1) > 0, :] = np.inf
-        dists[mask] = 1.0
-        unnormalized_weights = 1.0 / (np.power(dists, power))
+        # dists = np.copy(neighbor_distances)
+        # mask = dists == 0.0
+        # dists[np.sum(mask, axis=1) > 0, :] = np.inf
+        # dists[mask] = 1.0
+        unnormalized_weights = 1.0 / (np.power(neighbor_distances + epsilon, power))
         sum_over_row = np.sum(unnormalized_weights, axis=1, keepdims=True)
         weights = unnormalized_weights / sum_over_row
         return weights
