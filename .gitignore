@@ -1,0 +1,5 @@
+.idea/
+**/*.pyc
+tests/outputs
+workspace/spectroscopy/XANES/data/
+workspace/spectroscopy/XANES/outputs/
