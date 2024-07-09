@@ -248,6 +248,7 @@ class Reconstructor:
         xi: np.ndarray = None,
         n_neighbors: int = None,
         power: float = 2.0,
+        epsilon: float = 1e-7,
     ):
         """
         Inverse distance weighted interpolation gradient with nearest neighbors
@@ -291,11 +292,11 @@ class Reconstructor:
         grad = np.zeros((2, meshgrids[0].shape[0], meshgrids[0].shape[1]))
 
         # correct for zero distance
-        mask = nn_dists == 0.0
-        nn_dists[np.sum(mask, axis=1) > 0, :] = np.inf
-        nn_dists[mask] = 1.0
+        # mask = nn_dists == 0.0
+        # nn_dists[np.sum(mask, axis=1) > 0, :] = np.inf
+        # nn_dists[mask] = 1.0
         # inverse distances from xi (axis = 0) to point (axis = 1)
-        inv_distances = 1 / nn_dists
+        inv_distances = 1 / (nn_dists + epsilon)
         sum_inv_distances = np.sum(inv_distances**power, axis=1)
 
         inv_cubed = inv_distances ** (power + 2)
