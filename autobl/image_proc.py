@@ -120,9 +120,9 @@ def point_to_line_distance(pts, line_pt_1, line_pt_2):
     return d
 
 
-class DenseReconstructor:
+class Reconstructor:
     """
-    Reconstruct an image in dense pixel grid from sparse points.
+    Reconstruct an image from sparse points.
 
     Inverse distance weighted interpolation (IDW) is adapted from FaST:
     https://github.com/saugatkandel/fast_smart_scanning
@@ -150,7 +150,8 @@ class DenseReconstructor:
         self,
         points: np.ndarray,
         values: np.ndarray,
-        meshgrids: Tuple[np.ndarray, np.ndarray],
+        meshgrids: Tuple[np.ndarray, np.ndarray] = None,
+        xi: np.ndarray = None,
         n_neighbors: int = None,
     ):
         """
@@ -163,9 +164,11 @@ class DenseReconstructor:
         :return:
         """
         if self.method == "linear":
-            recon = self.reconstruct_linear(points, values, meshgrids)
+            recon = self.reconstruct_linear(points, values, meshgrids=meshgrids, xi=xi)
         elif self.method == "idw":
-            recon = self.reconstruct_idw(points, values, meshgrids, n_neighbors)
+            recon = self.reconstruct_idw(
+                points, values, meshgrids=meshgrids, xi=xi, n_neighbors=n_neighbors
+            )
         else:
             raise ValueError(f"{self.method} is not a valid method.")
         return recon
@@ -174,20 +177,25 @@ class DenseReconstructor:
         self,
         points: np.ndarray,
         values: np.ndarray,
-        meshgrids: Tuple[np.ndarray, np.ndarray],
+        meshgrids: Tuple[np.ndarray, np.ndarray] = None,
+        xi: np.ndarray = None,
     ):
         """
         Linear interpolation (using simplices) of points and values
         """
-        grid_y, grid_x = meshgrids
-        recon = scipy.interpolate.griddata(points, values, (grid_y, grid_x))
+        if meshgrids is not None:
+            grid_y, grid_x = meshgrids
+            recon = scipy.interpolate.griddata(points, values, (grid_y, grid_x))
+        elif xi is not None:
+            recon = scipy.interpolate.griddata(points, values, xi)
         return recon
 
     def reconstruct_idw(
         self,
         points: np.ndarray,
         values: np.ndarray,
-        meshgrids: Tuple[np.ndarray, np.ndarray],
+        meshgrids: Tuple[np.ndarray, np.ndarray] = None,
+        xi: np.ndarray = None,
         n_neighbors: int = None,
         power: float = 2.0,
     ):
@@ -200,38 +208,44 @@ class DenseReconstructor:
             interp points,)
         :param meshgrids: Tuple[np.ndarray, np.ndarray]. grid to get
             interpolated values for
+        :param xi: np.ndarray. points to measure at
         :param n_neighbors: number of nearest neighbors to use in the
             reconstruction
         """
-        # grid_y, grid_x = meshgrids
+        if meshgrids is not None:
+            xi = np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids))
         if n_neighbors is None:
             n_neighbors = self.options.get("n_neighbors", 4)
         if n_neighbors == -1:
             # Complete reconstruction with all points
-            return self._idw(
+            recon = self._idw(
                 points,
                 values,
-                np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids)),
+                xi,
                 power=self.options.get("power", 2.0),
-            ).reshape(meshgrids[0].shape)
+            )
+            if meshgrids is not None:
+                return recon.reshape(meshgrids[0].shape)
+            return recon
         knn_engine = NearestNeighbors(n_neighbors=n_neighbors)
         knn_engine.fit(points)
 
         # Find nearest measured points for each queried point.
-        queried_points = np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids))
-        nn_dists, nn_inds = knn_engine.kneighbors(queried_points, return_distance=True)
+        nn_dists, nn_inds = knn_engine.kneighbors(xi, return_distance=True)
         nn_weights = self._compute_neighbor_weights(nn_dists, power=power)
         nn_values = np.take(values, nn_inds)
 
         recon = np.sum(nn_values * nn_weights, axis=1)
-        recon = recon.reshape(meshgrids[0].shape)
+        if meshgrids is not None:
+            recon = recon.reshape(meshgrids[0].shape)
         return recon
 
     def reconstruct_idw_grad(
         self,
         points: np.ndarray,
         values: np.ndarray,
-        meshgrids: Tuple[np.ndarray, np.ndarray],
+        meshgrids: Tuple[np.ndarray, np.ndarray] = None,
+        xi: np.ndarray = None,
         n_neighbors: int = None,
         power: float = 2.0,
     ):
@@ -244,26 +258,34 @@ class DenseReconstructor:
             interp points,)
         :param meshgrids: Tuple[np.ndarray, np.ndarray]. grid to get
             interpolated values for
+        :param xi: np.ndarray. points to measure at
         :param n_neighbors: number of nearest neighbors to use in the
             reconstruction
         """
-        # grid_y, grid_x = meshgrids
+        if meshgrids is not None:
+            xi = np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids))
         if n_neighbors is None:
             n_neighbors = self.options.get("n_neighbors", 4)
         if n_neighbors == -1:
             # Complete reconstruction with all points
-            return self._idw_grad(
+            recon = self._idw_grad(
                 points,
                 values,
-                np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids)),
+                xi,
                 power=self.options.get("power", 2.0),
-            ).reshape(meshgrids[0].shape)
+            )
+            if meshgrids is not None:
+                return np.moveaxis(
+                    recon.reshape((meshgrids[0].shape[0], meshgrids[0].shape[1], 2)),
+                    -1,
+                    0,
+                )
+            return recon
         knn_engine = NearestNeighbors(n_neighbors=n_neighbors)
         knn_engine.fit(points)
 
         # Find nearest measured points for each queried point.
-        queried_points = np.stack(meshgrids, axis=-1).reshape(-1, len(meshgrids))
-        nn_dists, nn_inds = knn_engine.kneighbors(queried_points, return_distance=True)
+        nn_dists, nn_inds = knn_engine.kneighbors(xi, return_distance=True)
         values = np.take(values, nn_inds)
 
         grad = np.zeros((2, meshgrids[0].shape[0], meshgrids[0].shape[1]))
@@ -279,8 +301,8 @@ class DenseReconstructor:
         inv_cubed = inv_distances ** (power + 2)
         sum_val_inv_distances = np.sum(values * (inv_distances**power), axis=1)
         val_inv_cubed = values * inv_distances ** (power + 2)
-        diff_x = queried_points[:, np.newaxis, 0] - points[nn_inds, 0]
-        diff_y = queried_points[:, np.newaxis, 1] - points[nn_inds, 1]
+        diff_x = xi[:, np.newaxis, 0] - points[nn_inds, 0]
+        diff_y = xi[:, np.newaxis, 1] - points[nn_inds, 1]
 
         grad[0, :, :] = (
             (
@@ -396,3 +418,34 @@ class DenseReconstructor:
         ) / (sum_inv_distances**2)
 
         return grad
+
+
+class DenseReconstructor(Reconstructor):
+    """Reconstruct densely using a meshgrid"""
+
+    def reconstruct(
+        self,
+        points: np.ndarray,
+        values: np.ndarray,
+        meshgrids: Tuple[np.ndarray, np.ndarray] = None,
+        xi: np.ndarray = None,
+        n_neighbors: int = None,
+    ):
+        """
+        Reconstruct a dense image.
+
+        :param points: np.ndarray. A (N, 2) array of measured points.
+        :param values: np.ndarray. A 1-D array of measured values.
+        :param meshgrids: dense meshgrid to do the reconstruction
+        :param n_neighbors: number of nearest neighbors for IDW reconstruction
+        :return:
+        """
+        if self.method == "linear":
+            recon = self.reconstruct_linear(points, values, meshgrids=meshgrids)
+        elif self.method == "idw":
+            recon = self.reconstruct_idw(
+                points, values, meshgrids=meshgrids, n_neighbors=n_neighbors
+            )
+        else:
+            raise ValueError(f"{self.method} is not a valid method.")
+        return recon
