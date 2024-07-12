@@ -99,10 +99,10 @@ class DynamicExperimentResultAnalyzer:
             x, y = to_numpy(tester.test_energies.squeeze()), dset
             fig, ax = plt.subplots(2, 1, figsize=(4, 4))
             ax[0].plot(x, y[0])
-            ax[0].set_ylabel('Normalized absorption')
+            ax[0].set_ylabel('Normalized\nx-ray absorption')
             ax[0].grid()
             ax[1].plot(x, y[-1])
-            ax[1].set_ylabel('Normalized absorption')
+            ax[1].set_ylabel('Normalized\nx-ray absorption')
             ax[1].set_xlabel('Energy (eV)')
             ax[1].grid()
             plt.tight_layout()
@@ -192,7 +192,7 @@ class DynamicExperimentResultAnalyzer:
         ax.grid()
         ax.legend()
         ax.set_xlabel('Energy (eV)')
-        ax.set_ylabel('Normalized absorption')
+        ax.set_ylabel('Normalized\nx-ray absorption')
         plt.tight_layout()
         fig.savefig(os.path.join(self.output_dir, output_filename))
 
