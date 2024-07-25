@@ -415,11 +415,12 @@ class ComprehensiveAugmentedAcquisitionFunction(PosteriorStandardDeviationDerive
                 guide_obj=guide_obj,
                 debug=debug
             )
+            self.phi_r = self.acqf_r.phi
         else:
             logging.warning('No reference spectra provided. Using dummy acquisition function instead.')
             self.acqf_r = DummyAcquisition()
+            self.phi_r = 0
         self.gradient_order = gradient_order
-        self.phi_r = phi_r
         self.phi_g = self.acqf_g.phi
         self.phi_g2 = self.acqf_g.phi2
         self.reference_spectra_x = reference_spectra_x
