@@ -20,7 +20,8 @@ dependencies = [
     "ipywidgets",
     "scikit-learn",
     "scikit-image",
-    "pandas"
+    "pandas",
+    "h5py"
 ]
 version = "0.0.1"
 

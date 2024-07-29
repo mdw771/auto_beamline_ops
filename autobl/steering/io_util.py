@@ -18,6 +18,11 @@ class SpectroscopyDataset:
 
     def __getitem__(self, item):
         return self.data[item]
+    
+    def crop_by_energy(self, min_energy_ev, max_energy_ev):
+        mask = (self.energies_ev >= min_energy_ev) & (self.energies_ev <= max_energy_ev)
+        self.data = self.data[:, mask]
+        self.energies_ev = self.energies_ev[mask]
 
 
 class ColumnMajorCSVSpectroscopyDataset(SpectroscopyDataset):
