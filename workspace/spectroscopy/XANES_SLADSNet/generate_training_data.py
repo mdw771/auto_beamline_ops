@@ -7,6 +7,7 @@ import h5py
 import scipy
 import sklearn
 import tqdm
+import matplotlib.pyplot as plt
 
 import autobl.steering
 import autobl.steering.io_util
@@ -88,12 +89,13 @@ class TrainingDataGenerator:
         self.f = h5py.File(self.output_path, 'w')
         
         n_samples, n_measured_max = self.estimate_training_set_size()
-        self.f.create_dataset('x', (n_samples, 1), dtype='float32')
-        self.f.create_dataset('sampling_ratio', (n_samples, 1), dtype='float32')
-        self.f.create_dataset('n_measured', (n_samples, 1), dtype=int)
+        self.f.create_dataset('spec_id', (n_samples,), dtype=int)
+        self.f.create_dataset('x', (n_samples,), dtype='float32')
+        self.f.create_dataset('sampling_ratio', (n_samples,), dtype='float32')
+        self.f.create_dataset('n_measured', (n_samples,), dtype=int)
         self.f.create_dataset('x_measured', (n_samples, n_measured_max), dtype='float32')
         self.f.create_dataset('y_measured', (n_samples, n_measured_max), dtype='float32')
-        self.f.create_dataset('erd', (n_samples, 1), dtype='f')
+        self.f.create_dataset('erd', (n_samples,), dtype='f')
         
     def estimate_training_set_size(self):
         n_samples = 0
@@ -153,10 +155,11 @@ class TrainingDataGenerator:
                                            )
                 y_recon = self.reconstruct_spectrum(x_new_measured, y_new_measured, self.x_interp)
                 r1 = self.metric(y_recon, self.y_true_interp)
-                erd = r0 - r1
-                self.record_data(x_norm, self.x_measured_norm, self.y_measured, sampling_ratio, erd)
+                erd = np.clip(r0 - r1, 0, None)
+                self.record_data(ind, x_norm, self.x_measured_norm, self.y_measured, sampling_ratio, erd)
     
-    def record_data(self, x, x_measured, y_measured, sampling_ratio, erd):
+    def record_data(self, spec_id, x, x_measured, y_measured, sampling_ratio, erd):
+        self.f['spec_id'][self.i_sample] = spec_id
         sorted_inds = np.argsort(x_measured)
         x_measured = x_measured[sorted_inds]
         y_measured = y_measured[sorted_inds]
@@ -181,13 +184,46 @@ class TrainingDataGenerator:
         sorted_inds = np.argsort(x_dat)
         x_dat = x_dat[sorted_inds]
         y_dat = y_dat[sorted_inds]
-        interpolator = scipy.interpolate.CubicSpline(x_dat, y_dat, extrapolate=True)
+        # interpolator = scipy.interpolate.CubicSpline(x_dat, y_dat, extrapolate=True)
+        interpolator = scipy.interpolate.interp1d(x_dat, y_dat, bounds_error=False, fill_value='extrapolate')
         y_interp = interpolator(x_interp)
         return y_interp
+    
+
+class TrainingDatasetVisualizer:
+    
+    def __init__(self, path):
+        self.path = path
+        self.f = h5py.File(path, 'r')
+        self.spectrum_nmeas_combs = []
+        
+    def build(self):
+        spec_ids = self.f['spec_id'][...]
+        n_measured_list = self.f['n_measured'][...]
+        self.spectrum_nmeas_combs = np.unique(np.stack((spec_ids, n_measured_list), axis=1), axis=0)
+        
+    def run(self):
+        self.build()
+        for comb in tqdm.tqdm(self.spectrum_nmeas_combs):
+            spec_id, n_measured = comb
+            mask = (self.f['spec_id'][...] == spec_id) & (self.f['n_measured'][...] == n_measured)
+            ind = np.where(mask)[0][0]
+            x_measured, y_measured = self.f['x_measured'][ind], self.f['y_measured'][ind]
+            x_measured = x_measured[:n_measured]
+            y_measured = y_measured[:n_measured]
+            erds = self.f['erd'][...][mask]
+            x_interp = np.linspace(0, 1, len(erds))
+            
+            fig, ax = plt.subplots(1, 1)
+            ax.scatter(x_measured, y_measured, label='measured')
+            ax2 = ax.twinx()
+            ax2.plot(x_interp, erds)
+            plt.show()
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='[%(asctime)s] - %(message)s')
+    
     dset1 = autobl.steering.io_util.YBCORawDataset('data/raw/YBCO/YBCO_epararb.0001')
     dset1.crop_by_energy(8920, 9080)
     dset2 = autobl.steering.io_util.LTORawDataset('data/raw/LiTiO_XANES/rawdata', filename_pattern="LTOsample3.[0-9]*")
@@ -201,3 +237,6 @@ if __name__ == "__main__":
     data_gen = TrainingDataGenerator(dset,
                                      output_path='slads_data/data_train.h5')
     data_gen.run()
+
+    visualizer = TrainingDatasetVisualizer('slads_data/data_train.h5')
+    visualizer.run()
