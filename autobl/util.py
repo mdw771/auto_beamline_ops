@@ -1,6 +1,7 @@
 import random
 
 import numpy as np
+import scipy.interpolate
 try:
     import torch
     from torch import Tensor
@@ -130,3 +131,28 @@ def estimate_sparse_gradient(x, y):
     grad_x_mid = (x[2:] + x[:-2]) / 2.0
     grad_y = np.interp(grad_x, grad_x_mid, grad_y_mid)
     return grad_x, grad_y
+
+
+def reconstruct_spectrum(x_dat, y_dat, x_interp, method='linear'):
+    """
+    Reconstruct a dense spectrum from sparse measurements. 
+
+    :param x_dat: ndarray. 
+    :param y_dat: ndarray
+    :param x_interp: ndarray
+    :param method: str. Can be "linear", "cubic".
+    :return: ndarray.
+    """
+    x_dat, unique_inds = np.unique(x_dat, return_index=True)
+    y_dat = y_dat[unique_inds]
+    sorted_inds = np.argsort(x_dat)
+    x_dat = x_dat[sorted_inds]
+    y_dat = y_dat[sorted_inds]
+    if method == "cubic":
+        interpolator = scipy.interpolate.CubicSpline(x_dat, y_dat, extrapolate=True)
+    elif method == "linear":
+        interpolator = scipy.interpolate.interp1d(x_dat, y_dat, bounds_error=False, fill_value='extrapolate')
+    else:
+        raise ValueError("{} is not a valid interpolation method.".format(method))
+    y_interp = interpolator(x_interp)
+    return y_interp

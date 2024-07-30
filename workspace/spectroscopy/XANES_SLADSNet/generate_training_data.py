@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import autobl.steering
 import autobl.steering.io_util
 from autobl.steering.measurement import SimulatedMeasurement
+from autobl.util import reconstruct_spectrum
 
 
 class CombinedDataset:
@@ -145,7 +146,7 @@ class TrainingDataGenerator:
                 logging.info(f'Skipping this sampling ratio because of too few points: {n_measured} < {self.min_num_points}')
                 continue
             self.perform_initial_measurements(n_measured)
-            y_recon_0 = self.reconstruct_spectrum(self.x_measured, self.y_measured, self.x_interp)
+            y_recon_0 = reconstruct_spectrum(self.x_measured, self.y_measured, self.x_interp, method="linear")
             r0 = self.metric(y_recon_0, self.y_true_interp)
             
             for x, x_norm in zip(self.x_interp, self.x_interp_norm):
@@ -153,7 +154,7 @@ class TrainingDataGenerator:
                 y_new_measured = np.append(self.y_measured, 
                                            self.instrument.measure(np.array([[x]])).squeeze().numpy()
                                            )
-                y_recon = self.reconstruct_spectrum(x_new_measured, y_new_measured, self.x_interp)
+                y_recon = reconstruct_spectrum(x_new_measured, y_new_measured, self.x_interp, method="linear")
                 r1 = self.metric(y_recon, self.y_true_interp)
                 erd = np.clip(r0 - r1, 0, None)
                 self.record_data(ind, x_norm, self.x_measured_norm, self.y_measured, sampling_ratio, erd)
@@ -176,18 +177,6 @@ class TrainingDataGenerator:
         self.x_measured_norm = np.concatenate([np.array([0, 1]), np.random.rand(n - 2)])
         self.x_measured = self.lb_ev + self.x_measured_norm * (self.ub_ev - self.lb_ev)
         self.y_measured = self.instrument.measure(self.x_measured[:, None]).numpy()
-        
-    @staticmethod
-    def reconstruct_spectrum(x_dat, y_dat, x_interp):
-        x_dat, unique_inds = np.unique(x_dat, return_index=True)
-        y_dat = y_dat[unique_inds]
-        sorted_inds = np.argsort(x_dat)
-        x_dat = x_dat[sorted_inds]
-        y_dat = y_dat[sorted_inds]
-        # interpolator = scipy.interpolate.CubicSpline(x_dat, y_dat, extrapolate=True)
-        interpolator = scipy.interpolate.interp1d(x_dat, y_dat, bounds_error=False, fill_value='extrapolate')
-        y_interp = interpolator(x_interp)
-        return y_interp
     
 
 class TrainingDatasetVisualizer:
