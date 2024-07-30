@@ -112,7 +112,10 @@ def read_nor(fname):
 
 class SLADSDataset(Dataset):
     
-    def __init__(self, path, returns=("x", "x_measured", "y_measured", "erd"), n_recon_pixels=1000, *args, **kwargs):
+    def __init__(self, 
+                 path, 
+                 returns=("x", "x_measured", "y_measured", "y_interp", "n_measured", "erd"), 
+                 n_recon_pixels=1000, *args, **kwargs):
         """SLADS dataset. 
 
         :param path: str. Path to the h5 file.
@@ -137,24 +140,27 @@ class SLADSDataset(Dataset):
         for return_type in self.returns:
             n_measured = self.f['n_measured'][ind]
             if return_type == 'x':
-                v = torch.tensor(self.f['x'][ind])
+                v = torch.tensor(self.f['x'][ind:ind + 1]).reshape(1, -1).float()
+            elif return_type == 'n_measured':
+                v = torch.tensor([[n_measured]]).int()
             elif return_type == 'x_measured':
-                v = self.f['x_measured'][ind:ind + 1, :n_measured]
-                v = torch.tensor(v)
+                v = self.f['x_measured'][ind:ind + 1, :]
+                v[:, n_measured:] = np.nan
+                v = torch.tensor(v).float()
             elif return_type == 'y_measured':
-                v = self.f['y_measured'][ind:ind + 1, :n_measured]
-                v = torch.tensor(v)
+                v = self.f['y_measured'][ind:ind + 1, :]
+                v[:, n_measured:] = np.nan
+                v = torch.tensor(v).float()
             elif return_type == 'erd':
-                v = torch.tensor(self.f['erd'][ind])
+                v = torch.tensor(self.f['erd'][ind:ind + 1]).reshape(1, -1).float()
             elif return_type == 'y_interp':
                 v = reconstruct_spectrum(
                     self.f['x_measured'][ind, :n_measured], 
                     self.f['y_measured'][ind, :n_measured], 
                     np.linspace(0, 1, self.n_recon_pixels),
                     method="linear")
-                v = torch.tensor(v.reshape([1, -1]))
+                v = torch.tensor(v.reshape([1, -1])).float()
             else:
                 raise ValueError(f"Invalid return type: {return_type}")
             return_list.append(v)
-        return return_list
-            
+        return tuple(return_list)
