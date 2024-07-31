@@ -1,11 +1,12 @@
 import dataclasses
 from collections.abc import Sequence, Callable
-from typing import Type, Optional, Any, Tuple
+from typing import Type, Optional, Any, Tuple, Dict
 import json
 
 import botorch
 import gpytorch
 import numpy as np
+import torch
 
 from autobl.steering.optimization import Optimizer, ContinuousOptimizer
 
@@ -213,6 +214,27 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
     the posterior mean in acquisition function. To use interpolation also in acquisition function, choose
     a subclass of `PosteriorStandardDeviationDerivedAcquisition`, and set `estimate_posterior_mean_by_interpolation`
     to True in `acquisition_function_params`.
+    """
+    
+    
+@dataclasses.dataclass
+class SLDAS1DExperimentGuideConfig(GPExperimentGuideConfig):
+
+    model_path: str = None
+    """Path to the SLDAS model."""
+    
+    model_class: Type[torch.nn.Module] = None
+    """Class handle of the model."""
+    
+    model_params: Dict[str, Any] = None
+    """Model parameters."""
+    
+    n_eval_pixels: int = 1000
+    """
+    The number of pixels uniformly spanning the measured range. 
+    ERD is evaluated by the SLDAS model at these pixels. This 
+    number is also used to interpolate the dense spectra and should match
+    the spectrum dimension in the model. 
     """
 
 

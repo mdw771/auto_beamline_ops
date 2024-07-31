@@ -80,7 +80,7 @@ configs = generic_trainer.configs.TrainingConfig(
     num_epochs=120,
     learning_rate_per_process=1e-3,
     optimizer=torch.optim.Adam,
-    model_save_dir="trained_models/model_test",
+    model_save_dir=model_save_dir,
     loss_function=torch.nn.MSELoss()
 )
 

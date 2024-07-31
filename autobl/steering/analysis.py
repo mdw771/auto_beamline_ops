@@ -117,9 +117,13 @@ class ScanningExperimentAnalyzer(Analyzer):
 
     @set_enabled
     def update_intermediate_data_dict(self):
+        if 'use_spline_interpolation_for_posterior_mean' in self.guide_configs.__dict__.keys():
+            use_spline_interpolation_for_mean = self.guide_configs.use_spline_interpolation_for_posterior_mean
+        else:
+            use_spline_interpolation_for_mean = False
         mu, sigma = self.guide.get_posterior_mean_and_std(
             self.data_x[:, None],
-            use_spline_interpolation_for_mean=self.guide_configs.use_spline_interpolation_for_posterior_mean
+            use_spline_interpolation_for_mean=use_spline_interpolation_for_mean
         )
         mu = mu.squeeze()
         sigma = sigma.squeeze()
@@ -143,9 +147,13 @@ class ScanningExperimentAnalyzer(Analyzer):
 
     @set_enabled
     def update_convergence_data(self):
+        if 'use_spline_interpolation_for_posterior_mean' in self.guide_configs.__dict__.keys():
+            use_spline_interpolation_for_mean = self.guide_configs.use_spline_interpolation_for_posterior_mean
+        else:
+            use_spline_interpolation_for_mean = False
         mu, _ = self.guide.get_posterior_mean_and_std(
             self.data_x[:, None],
-            use_spline_interpolation_for_mean=self.guide_configs.use_spline_interpolation_for_posterior_mean
+            use_spline_interpolation_for_mean=use_spline_interpolation_for_mean
         )
         mu = mu.squeeze()
         metric = rms(mu.detach().cpu().numpy(), self.data_y)

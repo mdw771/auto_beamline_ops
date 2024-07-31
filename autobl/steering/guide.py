@@ -65,9 +65,11 @@ class ExperimentGuide:
     def build(self, *args, **kwargs):
         self.build_transform()
 
-    def build_transform(self):
+    def build_transform(self, x_train=None, y_train=None):
         self.input_transform = Normalize(d=self.config.dim_measurement_space, bounds=self.get_bounds())
         self.outcome_transform = Standardize(m=self.config.dim_measurement_space)
+        if x_train is not None and y_train is not None:
+            self.transform_data(x_train, y_train, train_x=False, train_y=True)
 
     def get_bounds(self):
         lb = self.config.lower_bounds
@@ -127,6 +129,14 @@ class ExperimentGuide:
 
     def update(self, *args, **kwargs):
         pass
+    
+    def get_posterior_mean_and_std(self, x, transform=True, untransform=True, **kwargs):
+        if transform:
+            x, _ = self.transform_data(x)
+        mu = self.get_estimated_data_by_interpolation(x)
+        if untransform:
+            _, mu = self.untransform_data(x, mu)
+        return mu, torch.zeros_like(mu)
 
     def get_estimated_data_by_interpolation(self, x):
         x_dat = to_numpy(self.data_x.squeeze())
@@ -633,3 +643,83 @@ class XANESExperimentGuide(GPExperimentGuide):
             plt.show()
 
         self.feature_projection_func = projection_func
+
+
+class SLDAS1DExperimentGuide(ExperimentGuide):
+
+    def __init__(self, config: SLDAS1DExperimentGuideConfig, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        self.model = None
+        self.n_update_calls = 0
+        self.lb = self.config.lower_bounds[0]
+        self.ub = self.config.upper_bounds[0]
+
+    def build(self, x_train, y_train):
+        self.build_transform(x_train=x_train, y_train=y_train)
+        self.build_model()
+        x_train, y_train = self.transform_data(x_train, y_train, train_x=False, train_y=True)
+        self.record_data(x_train, y_train)
+        
+    def build_model(self):
+        self.model = self.config.model_class(**self.config.model_params)
+        self.load_model()
+        self.model.eval()
+        
+    def load_model(self):
+        self.model.load_state_dict(torch.load(self.config.model_path))
+
+    def update(self, x_data, y_data, **kwargs):
+        x_data, y_data = self.transform_data(x_data, y_data)
+        self.record_data(x_data, y_data)
+        self.n_update_calls += 1
+
+    def suggest(self):
+        x = torch.linspace(0, 1, self.config.n_eval_pixels).float()
+        x_measured, y_measured = self.data_x, self.data_y
+        y_interp = reconstruct_spectrum(to_numpy(x_measured).squeeze(), to_numpy(y_measured).squeeze(), to_numpy(x))
+        y_interp = torch.tensor(y_interp, device=self.data_x.device).float().repeat(x.shape[0], 1)
+        x_measured = x_measured.reshape([1, -1]).repeat(x.shape[0], 1).float()
+        erds = self.model(x.reshape([-1, 1]), x_measured, y_interp)
+        
+        # fig, ax = plt.subplots(1, 1)
+        # ax.plot(to_numpy(x.squeeze()), to_numpy(erds.squeeze()))
+        # ax2 = ax.twinx()
+        # ax2.scatter(to_numpy(self.data_x.squeeze()), to_numpy(self.data_y.squeeze()))
+        # ax2.plot(to_numpy(x.squeeze()), to_numpy(y_interp[0].squeeze()))
+        # plt.show()
+        
+        x = x[torch.argmax(erds.squeeze())].reshape(1, 1)
+        x, _ = self.untransform_data(x=x)
+        return x
+
+    def plot_posterior(self, x, ax=None):
+        """
+        Plot the posterior mean and standard deviation of the GP model. Only works with 1-dimension feature space.
+
+        :param x: torch.Tensor[float, ...]. The points to plot.
+        """
+        if not isinstance(x, torch.Tensor):
+            x = to_tensor(x)
+        if x.ndim == 1:
+            x = x[:, None]
+        mu, sigma = self.get_posterior_mean_and_std(x)
+        mu = mu.reshape(-1).cpu().detach().numpy()
+        sigma = sigma.reshape(-1).cpu().detach().numpy()
+
+        if isinstance(x, torch.Tensor):
+            x = x.cpu().detach().numpy()
+        x = np.squeeze(x)
+        external_ax = True
+        if ax is None:
+            external_ax = False
+            fig, ax = plt.subplots(1, 2, figsize=(9, 4))
+        if not isinstance(ax, (list, tuple, np.ndarray)):
+            ax = [ax]
+        ax[0].plot(x, mu, label='Posterior mean', linewidth=0.5)
+        data_x, data_y = self.untransform_data(self.data_x, self.data_y)
+        ax[0].scatter(to_numpy(data_x.reshape(-1)), to_numpy(data_y.reshape(-1)), label='Measured data', s=4)
+        ax[0].set_title('Posterior mean and $+/-\sigma$ interval')
+        if external_ax:
+            return ax
+        else:
+            plt.show()
