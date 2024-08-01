@@ -681,12 +681,13 @@ class SLDAS1DExperimentGuide(ExperimentGuide):
         x_measured = x_measured.reshape([1, -1]).repeat(x.shape[0], 1).float()
         erds = self.model(x.reshape([-1, 1]), x_measured, y_interp)
         
-        # fig, ax = plt.subplots(1, 1)
-        # ax.plot(to_numpy(x.squeeze()), to_numpy(erds.squeeze()))
-        # ax2 = ax.twinx()
-        # ax2.scatter(to_numpy(self.data_x.squeeze()), to_numpy(self.data_y.squeeze()))
-        # ax2.plot(to_numpy(x.squeeze()), to_numpy(y_interp[0].squeeze()))
-        # plt.show()
+        if self.config.debug:
+            fig, ax = plt.subplots(1, 1)
+            ax.plot(to_numpy(x.squeeze()), to_numpy(erds.squeeze()))
+            ax2 = ax.twinx()
+            ax2.scatter(to_numpy(x_measured[0]), to_numpy(self.data_y.squeeze()))
+            ax2.plot(to_numpy(x.squeeze()), to_numpy(y_interp[0].squeeze()))
+            plt.show()
         
         x = x[torch.argmax(erds.squeeze())].reshape(1, 1)
         x, _ = self.untransform_data(x=x)

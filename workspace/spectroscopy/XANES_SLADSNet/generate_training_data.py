@@ -55,12 +55,14 @@ class TrainingDataGenerator:
                  sampling_ratios: tuple[float, ...] = (0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6),
                  recon_pixel_size_ev: float = 1.0,
                  min_num_points: int = 10,
+                 normalize_erd: bool = False,
                  output_path: str = 'data/data_train.h5'):
         self.dataset = dataset
         self.sampling_ratios = sampling_ratios
         self.instrument = None
         self.recon_psize_ev = recon_pixel_size_ev
         self.min_num_points = min_num_points
+        self.normalize_erd = normalize_erd
         self.output_path = output_path
         self.f = None
         self.i_sample = 0
@@ -149,7 +151,8 @@ class TrainingDataGenerator:
             y_recon_0 = reconstruct_spectrum(self.x_measured, self.y_measured, self.x_interp, method="linear")
             r0 = self.metric(y_recon_0, self.y_true_interp)
             
-            for x, x_norm in zip(self.x_interp, self.x_interp_norm):
+            erd_list = []            
+            for x in self.x_interp:
                 x_new_measured = np.append(self.x_measured, x)
                 y_new_measured = np.append(self.y_measured, 
                                            self.instrument.measure(np.array([[x]])).squeeze().numpy()
@@ -157,7 +160,12 @@ class TrainingDataGenerator:
                 y_recon = reconstruct_spectrum(x_new_measured, y_new_measured, self.x_interp, method="linear")
                 r1 = self.metric(y_recon, self.y_true_interp)
                 erd = np.clip(r0 - r1, 0, None)
-                self.record_data(ind, x_norm, self.x_measured_norm, self.y_measured, sampling_ratio, erd)
+                erd_list.append(erd)
+                # self.record_data(ind, x_norm, self.x_measured_norm, self.y_measured, sampling_ratio, erd)
+            erd_list = np.array(erd_list)
+            if self.normalize_erd:
+                erd_list = (erd_list - erd_list.min()) / (erd_list.max() - erd_list.min())
+            self.record_data_batch(ind, self.x_interp_norm, self.x_measured_norm, self.y_measured, sampling_ratio, erd_list)
     
     def record_data(self, spec_id, x, x_measured, y_measured, sampling_ratio, erd):
         self.f['spec_id'][self.i_sample] = spec_id
@@ -172,6 +180,21 @@ class TrainingDataGenerator:
         self.f['y_measured'][self.i_sample, :n_measured] = y_measured
         self.f['erd'][self.i_sample] = erd
         self.i_sample += 1
+        
+    def record_data_batch(self, spec_id, x, x_measured, y_measured, sampling_ratio, erd):
+        bsize = len(x)
+        self.f['spec_id'][self.i_sample:self.i_sample + bsize] = spec_id
+        sorted_inds = np.argsort(x_measured)
+        x_measured = x_measured[sorted_inds]
+        y_measured = y_measured[sorted_inds]
+        self.f['x'][self.i_sample:self.i_sample + bsize] = x
+        n_measured = len(x_measured)
+        self.f['n_measured'][self.i_sample:self.i_sample + bsize] = n_measured
+        self.f['sampling_ratio'][self.i_sample:self.i_sample + bsize] = sampling_ratio
+        self.f['x_measured'][self.i_sample:self.i_sample + bsize, :n_measured] = x_measured
+        self.f['y_measured'][self.i_sample:self.i_sample + bsize, :n_measured] = y_measured
+        self.f['erd'][self.i_sample:self.i_sample + bsize] = erd
+        self.i_sample += bsize
             
     def perform_initial_measurements(self, n):
         self.x_measured_norm = np.concatenate([np.array([0, 1]), np.random.rand(n - 2)])
@@ -224,8 +247,9 @@ if __name__ == "__main__":
     dset = CombinedDataset([dset1, dset2, dset3, dset4])
     
     data_gen = TrainingDataGenerator(dset,
-                                     output_path='slads_data/data_train.h5')
+                                     normalize_erd=True,
+                                     output_path='slads_data/data_train_normalized.h5')
     data_gen.run()
 
-    visualizer = TrainingDatasetVisualizer('slads_data/data_train.h5')
-    visualizer.run()
+    # visualizer = TrainingDatasetVisualizer('slads_data/data_train_normalized.h5')
+    # visualizer.run()

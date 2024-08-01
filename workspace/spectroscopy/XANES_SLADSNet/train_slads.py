@@ -7,7 +7,8 @@ import torch.utils
 import torch.utils.data
 import generic_trainer
 
-import autobl.steering.model as models
+from autobl.steering.model import *
+from torch.nn import MSELoss
 import autobl.steering.io_util as io_util
 
 try:
@@ -22,12 +23,33 @@ logging.basicConfig(format='[%(asctime)s] %(message)s', level=logging.INFO)
 
 # =====================
 use_mlflow = True & mlflow_ok
+config_json = 'config_jsons/normalizedERD_convMLP_dimReconSpec1000_dimSpecEncoded256_dimFeatEncoded256_dimHiddenFeat128_dimHiddenFinal128_pooled_sigmoid.json'
 resume_from_checkpoint = False
-mlflow_name = "convMLP, dimReconSpec=1000, dimSpecEncoded=256, dimFeatEncoded=256, feat=pos+3NNs, gaussRandEnc, lr=1e-3"
+mlflow_name = "normalizedERD, convMLP, dimReconSpec=1000, dimSpecEncoded=256, dimFeatEncoded=256, dimHiddenFeat128, dimHiddenFinal128, feat=pos+3NNs, pooled, sigmoid, gaussRandEnc, lr=1e-3"
 mlflow_id = None
-model_save_dir = 'trained_models/model_convMLP_dimReconSpec1000_dimSpecEncoded256_dimFeatEncoded256_featPos3NNs_gaussRandEnc_lr1e-3'
+model_save_dir = 'trained_models/testmodel_normalizedERD_convMLP_dimReconSpec1000_dimSpecEncoded256_dimFeatEncoded256_dimHiddenFeat128_dimHiddenFinal128_pooled_sigmoid_featPos3NNs_gaussRandEnc_lr1e-3'
 # =====================
 
+
+def plot_erds():
+    if trainer.current_epoch == trainer.configs.num_epochs - 1:
+        import matplotlib.pyplot as plt
+        n = 5
+        fig, ax = plt.subplots(5, 1, figsize=(3.5, 1.5 * n))
+        for ip in range(n):
+            data = []
+            for i in range(157 * ip, 157 * (ip + 1)):
+                data.append(trainer.dataset[i])
+            x = torch.cat([a[0] for a in data], dim=0).cuda()
+            x_meas = torch.cat([a[1] for a in data], dim=0).cuda()
+            y_interp = torch.cat([a[2] for a in data], dim=0).cuda()
+            erd = torch.cat([a[3] for a in data], dim=0).cuda()
+            preds = trainer.model(x, x_meas, y_interp)
+            ax[ip].plot(x.squeeze().cpu().detach().numpy(), erd.squeeze().cpu().detach().numpy(), label='True ERD')
+            ax[ip].plot(x.squeeze().cpu().detach().numpy(), preds.squeeze().cpu().detach().numpy(), label='Predicted ERD')
+            plt.legend()
+        plt.tight_layout()
+        mlflow.log_figure(fig, 'erds.png')
 
 if use_mlflow:
     def flatten(dictionary, parent_key='', separator='_'):
@@ -53,36 +75,19 @@ if use_mlflow:
             }, 
             step=trainer.loss_tracker['epochs'][-1]
         )
+        
+        plot_erds()
 
 
-dataset = io_util.SLADSDataset("slads_data/data_train.h5", 
+dataset = io_util.SLADSDataset("slads_data/data_train_normalized.h5", 
                                returns=("x", "x_measured", "y_interp", "erd"),
                                n_recon_pixels=1000)
 # Uncomment to shrink dataset for debugging
 # dataset = torch.utils.data.Subset(dataset, range(100))
 
-model_params = generic_trainer.configs.ModelParameters()
-model_params.dim_recon_spec = 1000
-model_params.dim_spec_encoded=256
-model_params.dim_feat_encoded=256
-model_params.add_pooling=False
-
-configs = generic_trainer.configs.TrainingConfig(
-    model_class=models.ConvMLPModel,
-    model_params=model_params,
-    dataset=dataset,
-    data_label_separation_index=3,
-    validation_ratio=0.1,
-    pred_names_and_types=[["erd", "regr"]],
-    cpu_only=False,
-    random_seed=42,
-    batch_size_per_process=32,
-    num_epochs=120,
-    learning_rate_per_process=1e-3,
-    optimizer=torch.optim.Adam,
-    model_save_dir=model_save_dir,
-    loss_function=torch.nn.MSELoss()
-)
+configs = generic_trainer.configs.TrainingConfig()
+configs.load_from_json(config_json, namespace=globals())
+configs.dataset = dataset
 
 if use_mlflow:
     configs.post_training_epoch_hook = log_loss_to_mlflow_hook
@@ -101,7 +106,7 @@ if use_mlflow:
         # Attempting to log existing params will trigger an Exception (and it will be wrongly stated that the exception 
         # is an HTTP connection error which is not the case).
         mlflow.log_params(flatten(configs.get_serializable_dict()))
-        #mlflow.log_artifact(__file__)
+        mlflow.log_artifact(__file__)
 
 trainer = generic_trainer.Trainer(configs)
 trainer.build()

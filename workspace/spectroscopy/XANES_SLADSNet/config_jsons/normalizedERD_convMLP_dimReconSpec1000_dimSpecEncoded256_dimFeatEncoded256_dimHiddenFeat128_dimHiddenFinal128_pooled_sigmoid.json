@@ -1,0 +1,56 @@
+{
+    "model_class": "<class 'autobl.steering.model.ConvMLPModel'>",
+    "model_params": {
+        "dim_recon_spec": 1000,
+        "dim_spec_encoded": 256,
+        "dim_feat_encoded": 256,
+        "add_pooling": true,
+        "dim_hidden_feat": 128,
+        "dim_hidden_final": 128,
+        "sigmoid_on_output": true,
+        "config_class": "ModelParameters"
+    },
+    "dataset": "<autobl.steering.io_util.SLADSDataset object at 0x7fc4ad099a90>",
+    "pred_names_and_types": [
+        [
+            "erd",
+            "regr"
+        ]
+    ],
+    "dataset_creator_name": null,
+    "data_label_separation_index": 3,
+    "debug": false,
+    "cpu_only": false,
+    "random_seed": 42,
+    "parallelization_params": {
+        "find_unused_parameters": false,
+        "parallelization_type": "single_node",
+        "config_class": "ParallelizationConfig"
+    },
+    "task_type": "classification",
+    "training_dataset": null,
+    "validation_dataset": null,
+    "test_dataset": null,
+    "batch_size_per_process": 32,
+    "num_epochs": 60,
+    "learning_rate_per_process": 0.001,
+    "optimizer": "<class 'torch.optim.adam.Adam'>",
+    "optimizer_params": {},
+    "multi_optimizer_param_dicts": null,
+    "scheduler": "<class 'torch.optim.lr_scheduler.CyclicLR'>",
+    "model_save_dir": "trained_models/model_normalizedERD_convMLP_dimReconSpec1000_dimSpecEncoded256_dimFeatEncoded256_dimHiddenFeat128_dimHiddenFinal128_pooled_sigmoid_featPos3NNs_gaussRandEnc_lr1e-3",
+    "checkpoint_dir": null,
+    "pretrained_model_path": null,
+    "load_pretrained_encoder_only": false,
+    "validation_ratio": 0.1,
+    "post_training_epoch_hook": "<function log_loss_to_mlflow_hook at 0x7fc3da7256c0>",
+    "post_validation_epoch_hook": "<function log_val_loss_to_mlflow_hook at 0x7fc3dbee18a0>",
+    "post_test_epoch_hook": null,
+    "loss_function": "MSELoss()",
+    "loss_tracker_params": {
+        "require_cs_labels": false,
+        "config_class": "LossTrackerParameters"
+    },
+    "automatic_mixed_precision": false,
+    "save_onnx": false
+}
