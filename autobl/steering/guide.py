@@ -24,6 +24,7 @@ class StoppingCriterion:
     def __init__(self, configs: StoppingCriterionConfig, guide):
         self.configs = configs
         self.guide = guide
+        self.reason = ''
 
     def check(self):
         if self.configs is None:
@@ -32,7 +33,12 @@ class StoppingCriterion:
             return False
         if (self.guide.n_update_calls - self.configs.n_updates_to_begin) % self.configs.n_check_interval != 0:
             return False
+        if self.configs.n_max_measurements is not None: 
+            if self.guide.data_x.shape[0] >= self.configs.n_max_measurements:
+                self.reason = 'n_max_measurements_exceeded'
+                return True
         if self.configs.method == 'max_uncertainty':
+            self.reason = 'criterion_triggered'
             return self.check_max_uncertainty()
 
     def check_max_uncertainty(self):
