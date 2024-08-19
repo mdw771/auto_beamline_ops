@@ -477,6 +477,25 @@ class XANESExperimentGuide(GPExperimentGuide):
         super().build_acquisition_function()
         if hasattr(self.acquisition_function, 'set_weight_func'):
             self.acquisition_function.set_weight_func(self.acqf_weight_func)
+        if hasattr(self.acquisition_function, 'set_background_gradient'):
+            edge_loc, edge_width = self.estimate_edge_location_and_width(
+                self.data_x, self.data_y,
+                input_is_transformed=True,
+                run_in_transformed_space=True,
+                return_normalized_values=True
+            )
+            x0 = 0
+            x1 = edge_loc - edge_width * 2.0
+            if x1 < x0:
+                logging.info('Was trying to estimate background gradient, but '
+                             'edge location is too close to the energy lower bound.')
+            else:
+                # Untransform mu to keep it consistent with what's done in acquisition function.
+                mu, _ = self.get_posterior_mean_and_std(to_tensor(np.array([[x0], [x1]])), 
+                                                        transform=False, untransform=True)
+                y0, y1 = mu.squeeze()
+                g_bkgd = (y1 - y0) / (x1 - x0)
+                self.acquisition_function.set_background_gradient(g_bkgd)
 
     def get_posterior_mean_and_std(self, x, transform=True, untransform=True, use_spline_interpolation_for_mean=None,
                                    compute_sigma=True):
@@ -591,6 +610,9 @@ class XANESExperimentGuide(GPExperimentGuide):
             peak_loc, _ = self.untransform_data(float(peak_loc))
             peak_width, _ = self.untransform_data(peak_width)
         elif not return_normalized_values and not run_in_transformed_space:
+            peak_loc = x_dense[peak_loc]
+            peak_width = peak_width * dense_psize
+        else:
             peak_loc = x_dense[peak_loc]
             peak_width = peak_width * dense_psize
         return peak_loc, peak_width
