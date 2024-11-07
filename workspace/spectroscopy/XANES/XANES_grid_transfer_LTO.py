@@ -260,8 +260,8 @@ class LTOGridTransferTester:
                 experiment = self.run_acquisition_for_spectrum_index(ref_ind, dataset='ref')
                 point_grid = to_numpy(experiment.guide.untransform_data(x=experiment.guide.data_x)[0].squeeze())
                 ref_points.append(point_grid)
-            intersect_point_grid = self.find_intersects_with_tolerance_multi_arrays(ref_points,
-                                                                                    tol=self.grid_intersect_tol)
+            intersect_point_grid = find_intersects_with_tolerance_multi_arrays(ref_points,
+                                                                               tol=self.grid_intersect_tol)
             logging.info('Numbers of points from all reference spectra: {}'.format([len(x) for x in ref_points]))
             logging.info('The merged grid has {} points.'.format(len(intersect_point_grid)))
             self.point_grid = torch.tensor(intersect_point_grid.reshape(-1, 1))
@@ -273,18 +273,6 @@ class LTOGridTransferTester:
             self.point_grid = torch.sort(self.point_grid, dim=0).values
         else:
             raise ValueError('{} is invalid.'.format(self.grid_generation_method))
-
-    @staticmethod
-    def find_intersects_with_tolerance(arr1, arr2, tol=1.0):
-        dist = np.abs(arr1.reshape(-1, 1) - arr2).min(1)
-        ind_in_1 = np.where(dist < tol)
-        return arr1[ind_in_1]
-
-    def find_intersects_with_tolerance_multi_arrays(self, arrs, tol=1.0):
-        intersect = arrs[0]
-        for arr in arrs[1:]:
-            intersect = self.find_intersects_with_tolerance(intersect, arr, tol=tol)
-        return intersect
 
     def log_data(self, ind, rms):
         self.results['spectrum_index'].append(ind)

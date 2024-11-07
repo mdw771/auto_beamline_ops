@@ -133,3 +133,16 @@ def estimate_sparse_gradient(x, y):
     grad_x_mid = (x[2:] + x[:-2]) / 2.0
     grad_y = np.interp(grad_x, grad_x_mid, grad_y_mid)
     return grad_x, grad_y
+
+
+def find_intersects_with_tolerance(arr1, arr2, tol=1.0):
+    dist = np.abs(arr1.reshape(-1, 1) - arr2).min(1)
+    ind_in_1 = np.where(dist < tol)
+    return arr1[ind_in_1]
+
+
+def find_intersects_with_tolerance_multi_arrays(arrs, tol=1.0):
+    intersect = arrs[0]
+    for arr in arrs[1:]:
+        intersect = find_intersects_with_tolerance(intersect, arr, tol=tol)
+    return intersect
