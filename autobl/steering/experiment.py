@@ -76,10 +76,7 @@ class ScanningExperiment(Experiment):
             x_init = x_init.double().reshape(-1, 1)
         elif method == 'quasirandom':
             assert n > 2
-            x_init = torch.linspace(lb, ub, n).double()
-            dx = (torch.rand(n - 2) - 0.5) * (ub - lb) / (n - 1)
-            x_init[1:-1] = x_init[1:-1] + dx
-            x_init = x_init.double().reshape(-1, 1)
+            x_init = to_tensor(generate_quasi_random_numbers(n, lb.item(), ub.item())).double().reshape(-1, 1)
         elif method == 'spectral':
             spacing_low = 2
             spacing_high = 14

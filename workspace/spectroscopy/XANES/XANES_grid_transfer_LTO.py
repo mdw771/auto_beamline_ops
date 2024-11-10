@@ -19,7 +19,7 @@ from autobl.steering.acquisition import *
 from autobl.steering.optimization import *
 from autobl.steering.experiment import SimulatedScanningExperiment
 from autobl.steering.io_util import *
-from autobl.util import *
+from autobl.util import to_numpy, to_tensor, generate_quasi_random_numbers
 import autobl.tools.spectroscopy.xanes as xanestools
 
 torch.set_default_device('cpu')
@@ -100,7 +100,10 @@ class LTOGridTransferTester:
 
     def create_initial_points(self):
         energies = to_numpy(self.test_energies).reshape(-1)
-        self.supplied_initial_points = np.random.rand(self.n_initial_measurements) * (energies[-1] - energies[0]) + energies[0]
+        # self.supplied_initial_points = np.random.rand(self.n_initial_measurements) * (energies[-1] - energies[0]) + energies[0]
+        # self.supplied_initial_points = np.sort(self.supplied_initial_points)
+        self.supplied_initial_points = to_tensor(generate_quasi_random_numbers(self.n_initial_measurements, energies[0], energies[-1])).double().reshape(-1, 1)
+        
 
     def _plot_data(self):
         fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
@@ -159,10 +162,10 @@ class LTOGridTransferTester:
                               },
             stopping_criterion_configs=StoppingCriterionConfig(
                 method='max_uncertainty',
-                params={'threshold': 0.01},
+                params={'threshold': 0.001},
                 n_updates_to_begin=6,
             ),
-            use_spline_interpolation_for_posterior_mean=False
+            use_spline_interpolation_for_posterior_mean=True
         )
         return configs
 
@@ -273,6 +276,7 @@ class LTOGridTransferTester:
             self.point_grid = torch.sort(self.point_grid, dim=0).values
         else:
             raise ValueError('{} is invalid.'.format(self.grid_generation_method))
+        self.point_grid = torch.unique(self.point_grid, dim=0, sorted=True)
 
     def log_data(self, ind, rms):
         self.results['spectrum_index'].append(ind)
@@ -423,7 +427,7 @@ class LTOGridTransferTester:
 if __name__ == '__main__':
     normalizer = xanestools.XANESNormalizer(fit_ranges=((4900, 4950), (5100, 5200)), edge_loc=4983)
     
-    set_random_seed(164)
+    set_random_seed(1634)
     
     tester = LTOGridTransferTester(
         test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample3.[0-9]*",
@@ -453,7 +457,7 @@ if __name__ == '__main__':
     
     #----------------------------------------------
     
-    set_random_seed(134)
+    set_random_seed(1634)
 
     tester = LTOGridTransferTester(
         test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample3.[0-9]*",
@@ -470,7 +474,7 @@ if __name__ == '__main__':
 
     #------------------------------------------------
     # Generate ref data plot
-    set_random_seed(134)
+    set_random_seed(1634)
 
     tester = LTOGridTransferTester(
         test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample2.[0-9]*",

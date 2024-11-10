@@ -124,7 +124,7 @@ class PtGridTransferTester(LTOGridTransferTester):
             acqf_weight_func_post_edge_width=1.0,
             stopping_criterion_configs=StoppingCriterionConfig(
                 method='max_uncertainty',
-                params={'threshold': 0.01}
+                params={'threshold': 0.0001}
             ),
             use_spline_interpolation_for_posterior_mean=True
         )

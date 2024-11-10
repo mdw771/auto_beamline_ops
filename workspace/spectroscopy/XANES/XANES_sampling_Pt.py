@@ -86,7 +86,8 @@ configs = XANESExperimentGuideConfig(
                                  'beta': 0.999,
                                  'gamma': 0.95,
                                  'addon_term_lower_bound': 3e-2,
-                                 'estimate_posterior_mean_by_interpolation': False,
+                                 'estimate_posterior_mean_by_interpolation': True,
+                                 'subtract_background_gradient': True,
                                  'debug': False
                                  },
 
@@ -111,41 +112,41 @@ configs = XANESExperimentGuideConfig(
 
 analyzer_configs = ExperimentAnalyzerConfig(
     name='Pt',
-    output_dir='outputs/Pt_raw_randInit',
+    output_dir='outputs/Pt_raw_qrandInit_bgGrad',
     n_plot_interval=5
 )
 
-normalizer.save_state("outputs/Pt_raw_randInit/normalizer_state.npy")
+normalizer.save_state("outputs/Pt_raw_qrandInit_bgGrad/normalizer_state.npy")
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=20, n_target_measurements=60, initial_measurement_method='random')
+experiment.run(n_initial_measurements=20, n_target_measurements=60, initial_measurement_method='quasirandom')
 
 
 if True:
     # No acquisition reweighting
     set_random_seed(124)
     configs.n_updates_create_acqf_weight_func = None
-    analyzer_configs.output_dir = 'outputs/Pt_raw_randInit_noReweighting'
+    analyzer_configs.output_dir = 'outputs/Pt_raw_qrandInit_noReweighting_bgGrad'
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
-    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='quasirandom')
 
     # Posterior standard deviation-only acquisition
     set_random_seed(124)
     configs.acquisition_function_class = PosteriorStandardDeviation
     configs.acquisition_function_params = {}
     configs.stopping_criterion_configs = None
-    analyzer_configs.output_dir = 'outputs/Pt_raw_randInit_posteriorStddev'
+    analyzer_configs.output_dir = 'outputs/Pt_raw_qrandInit_posteriorStddev_bgGrad'
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
-    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='quasirandom')
 
     # Uniform sampling
     set_random_seed(124)
     configs.n_updates_create_acqf_weight_func = None
     configs.stopping_criterion_configs = None
-    analyzer_configs.output_dir = 'outputs/Pt_raw_randInit_uniformSampling'
+    analyzer_configs.output_dir = 'outputs/Pt_raw_qrandInit_uniformSampling_bgGrad'
     experiment = SimulatedScanningExperiment(configs, guide_class=UniformSamplingExperimentGuide,
                                              run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
-    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='quasirandom')

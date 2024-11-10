@@ -146,3 +146,14 @@ def find_intersects_with_tolerance_multi_arrays(arrs, tol=1.0):
     for arr in arrs[1:]:
         intersect = find_intersects_with_tolerance(intersect, arr, tol=tol)
     return intersect
+
+
+def generate_quasi_random_numbers(n, lb, ub):
+    """
+    Generate quasi-random numbers by uniformly sampling numbers in an
+    interval and then perturbing them.
+    """
+    x = np.linspace(lb, ub, n)
+    dx = (np.random.rand(n - 2) - 0.5) * (ub - lb) / (n - 1)
+    x[1:-1] = x[1:-1] + dx
+    return x
