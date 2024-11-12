@@ -196,16 +196,22 @@ class DynamicExperimentResultAnalyzer:
         plt.tight_layout()
         fig.savefig(os.path.join(self.output_dir, output_filename))
         
-    def plot_all_spectra(self, result_folder, indices, labels, normalizer=None, output_filename="all_spectra.pdf", fit_normalizer_with_true_data=True):
+    def plot_all_spectra(self, result_folder, indices, labels, normalizer=None, output_filename="all_spectra.pdf", 
+                         fit_normalizer_with_true_data=True, plot_func="plot", xtick_interval=None, value_range=(0, 1)):
         metadata = self.get_metadata(result_folder)
         tester = self.tester_class(**metadata)
         tester.load_data(normalizer=normalizer)
         
-        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-        cmap_list = matplotlib.colormaps['jet'](np.linspace(0, 1,len(labels)))
+        if plot_func == "plot":
+            fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+            cmap_list = matplotlib.colormaps['jet'](np.linspace(0, 1, len(indices)))
+        else:
+            fig, ax = plt.subplots(1, 1, figsize=(6, 3.5))
+            data = []
         for i in indices:
             table = pd.read_csv(os.path.join(result_folder, 'estimated_data_ind_{}.csv'.format(i)))
             energies = table['energy']
+            energies_0 = energies.to_numpy()
             estimated_data = table['estimated_data']
             if normalizer is not None:
                 if fit_normalizer_with_true_data:
@@ -213,11 +219,26 @@ class DynamicExperimentResultAnalyzer:
                 else:
                     normalizer.fit(energies, estimated_data)
                 estimated_data = normalizer.apply(energies, estimated_data)
-            lab = labels[i]
-            ax.plot(energies, estimated_data, label=lab, linewidth=0.5, color=cmap_list[i])
-        ax.grid()
-        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), frameon=False, fontsize=10)
-        ax.set_xlabel('Energy (eV)')
-        ax.set_ylabel('Normalized\nx-ray absorption')
+            if plot_func == "plot":
+                lab = labels[i]
+                ax.plot(energies, estimated_data, label=lab, linewidth=0.5, color=cmap_list[i])
+            else:
+                x = np.linspace(energies_0[0], energies_0[-1], len(energies_0))
+                y = scipy.interpolate.griddata(energies.to_numpy().reshape(-1, 1), estimated_data, x.reshape(-1, 1), method='linear')[:, 0]
+                data.append(y)
+        if plot_func == "plot":
+            ax.grid()
+            ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), frameon=False, fontsize=10)
+            ax.set_xlabel('Energy (eV)')
+            ax.set_ylabel('Normalized\nx-ray absorption')
+        else:
+            data = np.stack(data).transpose()
+            im = ax.imshow(data, extent=[0, data.shape[1], energies_0.max(), energies_0.min()], vmin=value_range[0], vmax=value_range[1],
+                           cmap='jet')
+            if xtick_interval is not None:
+                ax.set_xticks(np.arange(x.min(), x.max(), xtick_interval))
+            plt.colorbar(im, fraction=0.046, pad=0.04)
+            ax.set_ylabel('Energy (eV)')
+            ax.set_xlabel('Spectrum index')
         plt.tight_layout()
         fig.savefig(os.path.join(self.output_dir, output_filename))

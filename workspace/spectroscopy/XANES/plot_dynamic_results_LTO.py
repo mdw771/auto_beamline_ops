@@ -34,3 +34,4 @@ if __name__ == '__main__':
                                             read_precalculated_percentage_data=False, output_filename='LTO_50C_comparison_calculated_percentages.pdf')
     analyzer.plot_spectrum(folders, labels, 80, output_filename='LTO_50C_estimated_spectra_80.pdf', normalizer=normalizer)
     analyzer.plot_spectrum(folders, labels, 90, output_filename='LTO_50C_estimated_spectra_90.pdf', normalizer=normalizer)
+    analyzer.plot_all_spectra(folders[0], list(range(128)), None, normalizer=normalizer, output_filename='LTO_50C_grid_transfer_all_adapt_spectra.pdf', plot_func='imshow', value_range=(0, 1.5))
