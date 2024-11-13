@@ -16,13 +16,13 @@ logging.disable(logging.CRITICAL)
 if __name__ == '__main__':
     folders = [
         'outputs/grid_transfer_Pt/grid_redoForEach/Pt',
-        'outputs/grid_transfer_Pt/grid_initOfSelf/Pt',
-        'outputs/grid_transfer_Pt/grid_selectedRef/Pt',
+        # 'outputs/grid_transfer_Pt/grid_initOfSelf/Pt',
+        # 'outputs/grid_transfer_Pt/grid_selectedRef/Pt',
     ]
     labels = [
-        'Run for each',
-        'Initial spectrum',
-        'Reference spectra'
+        'Adaptively sampled',
+        # 'Initial spectrum',
+        # 'Reference spectra'
     ]
 
     normalizer = xanestools.XANESNormalizer(fit_ranges=((11400, 11500), (11650, 11850)), edge_loc=11566.0)

@@ -108,15 +108,38 @@ class DynamicExperimentResultAnalyzer:
             plt.tight_layout()
             fig.savefig(os.path.join(self.output_dir, os.path.splitext(output_filename)[0] + '_{}.pdf'.format(name)))
 
-    def compare_rms_across_time(self, result_folders, labels, output_filename='comparison_rms_across_time.pdf'):
+    def compare_rms_across_time(self, result_folders, labels, output_filename='comparison_rms_across_time.pdf', read_data=True, normalizer=None, fit_normalizer_with_true_data=True):
         fig, ax = plt.subplots(1, 1, figsize=(6, 2.5))
         for i, folder in enumerate(result_folders):
-            rms_list = np.loadtxt(os.path.join(folder, 'rms_all_test_spectra.txt'))
+            if read_data:
+                rms_list = np.loadtxt(os.path.join(folder, 'rms_all_test_spectra.txt'))
+            else:
+                rms_list = []
+                metadata = self.get_metadata(folder)
+                tester = self.tester_class(**metadata)
+                tester.load_data()
+                flist = glob.glob(os.path.join(folder, 'estimated_data_ind_*.csv'))
+                flist = np.array(flist)[np.argsort([int(re.findall('\d+', x)[-1]) for x in flist])]
+                for f in flist:
+                    table_spectrum = pd.read_csv(f, index_col=None)
+                    energies = table_spectrum['energy']
+                    estimated_spectrum = table_spectrum['estimated_data'].to_numpy()
+                    true_spectrum = table_spectrum['true_data'].to_numpy()
+                    if normalizer is not None:
+                        if fit_normalizer_with_true_data:
+                            normalizer.fit(tester.test_energies_raw, tester.test_data_all_spectra_raw[i])
+                        else:
+                            normalizer.fit(energies, estimated_spectrum)
+                        estimated_spectrum = normalizer.apply(energies, estimated_spectrum)
+                        true_spectrum = normalizer.apply(energies, true_spectrum)
+                    rms_list.append(rms(estimated_spectrum, true_spectrum))
             ax.plot(rms_list, linestyle=self.style_list[i], label=labels[i])
         ax.set_xlabel('Spectrum index')
         ax.set_ylabel('RMS')
+        ax.set_xticks(np.arange(0, len(rms_list), 20, dtype=int))
         ax.grid()
-        ax.legend()
+        if len(result_folders) > 1:
+            ax.legend()
         plt.tight_layout()
         fig.savefig(os.path.join(self.output_dir, output_filename))
 
