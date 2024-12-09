@@ -11,6 +11,7 @@ import matplotlib
 import numpy as np
 import pandas as pd
 import scipy.interpolate
+import sklearn.neighbors
 from torch import normal
 
 from autobl.util import *
@@ -143,7 +144,7 @@ class DynamicExperimentResultAnalyzer:
         plt.tight_layout()
         fig.savefig(os.path.join(self.output_dir, output_filename))
 
-    def calculate_phase_transition_percentages(self, folder):
+    def calculate_phase_transition_percentages(self, folder, normalizer=None):
         metadata = self.get_metadata(folder)
         tester = self.tester_class(**metadata)
         tester.load_data()
@@ -157,8 +158,14 @@ class DynamicExperimentResultAnalyzer:
             ind = int(re.findall('\d+', f)[-1])
             indices.append(ind)
             table_spectrum = pd.read_csv(f, index_col=None)
+            energies = table_spectrum['energy'].to_numpy()
             estimated_spectrum = table_spectrum['estimated_data'].to_numpy()
             true_spectrum = table_spectrum['true_data'].to_numpy()
+            if normalizer is not None:
+                normalizer.fit(energies, estimated_spectrum)
+                estimated_spectrum = normalizer.apply(energies, estimated_spectrum)
+                normalizer.fit(energies, true_spectrum)
+                true_spectrum = normalizer.apply(energies, true_spectrum)
             p_estimated, r = tester.get_phase_transition_percentage(estimated_spectrum, return_fitting_residue=True,
                                                                     add_constant_term=True)
             percentages_estimated.append(p_estimated)
@@ -171,9 +178,11 @@ class DynamicExperimentResultAnalyzer:
         return table
 
     def compare_calculated_percentages(self, result_folders, labels, x_data=None, x_label='Spectrum index', 
-                                       read_precalculated_percentage_data=True, normalizer=None,
-                                       output_filename='comparison_calculated_percentages.pdf'):
-        fig, ax = plt.subplots(1, 1, figsize=(6, 2.8))
+                                       read_precalculated_percentage_data=True, normalizer=None, plot_truth=True,
+                                       plot_func="plot", legend=True,
+                                       output_filename='comparison_calculated_percentages.pdf',
+                                       figsize=(6, 2.8)):
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
         table = {}
         for i, folder in enumerate(result_folders):
             if read_precalculated_percentage_data:
@@ -185,12 +194,21 @@ class DynamicExperimentResultAnalyzer:
                 table = tester.calculate_phase_transition_percentages(normalizer=normalizer)
             if x_data is None:
                 x_data = table['indices']
-            ax.plot(x_data, np.clip(table['percentages_estimated'] * 100, 0, 100), linestyle=self.style_list[i], label=labels[i])
-        ax.plot(x_data, np.clip(table['percentages_true'] * 100, 0, 100), linestyle='--', color='gray', label='Ground truth')
+            y_data = np.clip(table['percentages_estimated'] * 100, 0, 100)
+            if plot_func == "plot":
+                ax.plot(x_data, y_data, linestyle=self.style_list[i], label=labels[i])
+            else:
+                ax.scatter(x_data, y_data, label=labels[i])
+                p = np.polyfit(x_data, y_data, 1)
+                y_fit = p[0] * x_data + p[1]
+                ax.plot(x_data, y_fit, label="Regression line", linestyle='--', color='gray')
+        if plot_truth:
+            ax.plot(x_data, np.clip(table['percentages_true'] * 100, 0, 100), linestyle='--', color='gray', label='Ground truth')
         ax.set_xlabel(x_label)
         ax.set_ylabel('Phase transition percentage (%)')
         ax.grid()
-        ax.legend()
+        if legend:
+            ax.legend()
         plt.tight_layout()
         fig.savefig(os.path.join(self.output_dir, output_filename))
 
@@ -219,18 +237,38 @@ class DynamicExperimentResultAnalyzer:
         plt.tight_layout()
         fig.savefig(os.path.join(self.output_dir, output_filename))
         
+    def plot_density_estimation(self, points, new_points, ax=None):
+        if ax is None:
+            fig, ax = plt.subplots(1, 1)
+        if points.ndim == 1:
+            points = points.reshape(-1, 1)
+        if new_points.ndim == 1:
+            new_points = new_points.reshape(-1, 1)
+        engine = sklearn.neighbors.KernelDensity(bandwidth=5, kernel='gaussian')
+        engine.fit(points)
+        density = engine.score_samples(new_points).reshape(-1)
+        density = np.exp(density)
+        density /= density.max()
+        # ax.plot(new_points.reshape(-1), density, color='cyan')
+        ax.fill_between(new_points.reshape(-1), density, alpha=0.5)
+        return ax
+        
     def plot_all_spectra(self, result_folder, indices, labels, normalizer=None, output_filename="all_spectra.pdf", 
-                         fit_normalizer_with_true_data=True, plot_func="plot", xtick_interval=None, value_range=(0, 1)):
+                         fit_normalizer_with_true_data=True, plot_func="plot", xtick_interval=None, value_range=(0, 1),
+                         alpha=1,
+                         plot_measured_data=False, plot_density_estimation=False,
+                         plot_figsize=(8, 5), imshow_figsize=(6, 3.5)):
         metadata = self.get_metadata(result_folder)
         tester = self.tester_class(**metadata)
         tester.load_data(normalizer=normalizer)
         
         if plot_func == "plot":
-            fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+            fig, ax = plt.subplots(1, 1, figsize=plot_figsize)
             cmap_list = matplotlib.colormaps['jet'](np.linspace(0, 1, len(indices)))
         else:
-            fig, ax = plt.subplots(1, 1, figsize=(6, 3.5))
+            fig, ax = plt.subplots(1, 1, figsize=imshow_figsize)
             data = []
+        all_measured_energies = []
         for i in indices:
             table = pd.read_csv(os.path.join(result_folder, 'estimated_data_ind_{}.csv'.format(i)))
             energies = table['energy']
@@ -244,12 +282,24 @@ class DynamicExperimentResultAnalyzer:
                 estimated_data = normalizer.apply(energies, estimated_data)
             if plot_func == "plot":
                 lab = labels[i]
-                ax.plot(energies, estimated_data, label=lab, linewidth=0.5, color=cmap_list[i])
+                ax.plot(energies, estimated_data, label=lab if not plot_measured_data else None, linewidth=0.5, color=cmap_list[i], alpha=alpha)
+                if plot_measured_data:
+                    table_meas = pd.read_csv(os.path.join(result_folder, 'measured_data_ind_{}.csv'.format(i)))
+                    measured_energies = table_meas['x_measured'].to_numpy()
+                    measured_data = table_meas['y_measured'].to_numpy()
+                    all_measured_energies.append(measured_energies)
+                    if normalizer is not None:
+                        measured_data = normalizer.apply(measured_energies, measured_data)
+                    ax.scatter(measured_energies, measured_data, s=3, color=cmap_list[i], label=lab)
             else:
                 x = np.linspace(energies_0[0], energies_0[-1], len(energies_0))
                 y = scipy.interpolate.griddata(energies.to_numpy().reshape(-1, 1), estimated_data, x.reshape(-1, 1), method='linear')[:, 0]
                 data.append(y)
         if plot_func == "plot":
+            if plot_density_estimation:
+                all_measured_energies = np.concatenate(all_measured_energies)
+                ax = self.plot_density_estimation(all_measured_energies, np.linspace(energies.min(), energies.max(), 100), ax=ax)
+
             ax.grid()
             ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), frameon=False, fontsize=10)
             ax.set_xlabel('Energy (eV)')

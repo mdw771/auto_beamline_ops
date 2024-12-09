@@ -217,9 +217,13 @@ class LTOGridTransferTester:
         return interpolated_data
 
     def save_spectrum_estimate_plot_and_data(self, ind, energies, estimated_data, x_measured=None, y_measured=None):
+        if len(self.test_data_all_spectra[ind]) == len(energies):
+            actual_data = self.test_data_all_spectra[ind]
+        else:
+            actual_data = estimated_data
         fig, ax = plt.subplots(1, 1)
-        ax.plot(to_numpy(self.test_energies.squeeze()), estimated_data, label='Estimated spectrum')
-        ax.plot(to_numpy(self.test_energies.squeeze()), self.test_data_all_spectra[ind], color='gray',
+        ax.plot(to_numpy(energies.squeeze()), estimated_data, label='Estimated spectrum')
+        ax.plot(to_numpy(energies.squeeze()), actual_data, color='gray',
                 linestyle='--', label='Actual spectrum')
         if x_measured is not None and y_measured is not None:
             ax.scatter(x_measured, y_measured, s=3)
@@ -230,7 +234,7 @@ class LTOGridTransferTester:
         df = pd.DataFrame(data={
             'energy': energies,
             'estimated_data': estimated_data,
-            'true_data': self.test_data_all_spectra[ind],
+            'true_data': actual_data,
         })
         df.to_csv(os.path.join(self.output_dir, 'estimated_data_ind_{}.csv'.format(ind)), index=False)
 
@@ -241,11 +245,13 @@ class LTOGridTransferTester:
             })
             df.to_csv(os.path.join(self.output_dir, 'measured_data_ind_{}.csv'.format(ind)), index=False)
 
-    def get_gp_interpolation(self, data_x, data_y):
+    def get_gp_interpolation(self, data_x, data_y, query_x=None):
+        if query_x is None:
+            query_x = self.test_energies
         configs = self.get_generic_config()
         guide = autobl.steering.guide.XANESExperimentGuide(configs)
         guide.build(data_x, data_y)
-        mu, _ = guide.get_posterior_mean_and_std(self.test_energies)
+        mu, _ = guide.get_posterior_mean_and_std(query_x)
         if self.debug:
             plt.plot(self.test_energies.squeeze(), to_numpy(mu.squeeze()))
             plt.scatter(data_x.squeeze(), data_y.squeeze())
@@ -298,9 +304,9 @@ class LTOGridTransferTester:
             metric_val = rms(data_interp, self.test_data_all_spectra[ind])
             self.log_data(ind, metric_val)
 
-    def post_analyze(self, normalizer=None):
+    def post_analyze(self, normalizer=None, normalize_percentages=False):
         self.analyze_rms()
-        self.analyze_phase_transition_percentages(normalizer=normalizer)
+        self.analyze_phase_transition_percentages(normalizer=normalizer, normalize_percentages=normalize_percentages)
 
     def analyze_rms(self):
         indices = []
@@ -324,7 +330,7 @@ class LTOGridTransferTester:
         ax.set_ylabel('RMS')
         plt.savefig(os.path.join(self.output_dir, 'rms_all_test_spectra.pdf'))
 
-    def calculate_phase_transition_percentages(self, normalizer=None):
+    def calculate_phase_transition_percentages(self, normalizer=None, normalize_percentages=False):
         indices = []
         percentages_estimated = []
         percentages_true = []
@@ -370,6 +376,10 @@ class LTOGridTransferTester:
             fitting_residue_estimated.append(r)
             p_true = self.get_phase_transition_percentage(true_spectrum, ref_spectrum_fitting_true)
             percentages_true.append(p_true)
+            
+        if normalize_percentages:
+            percentages_estimated = percentages_estimated / percentages_estimated.max()
+            percentages_true = percentages_true / percentages_true.max()
 
         table = pd.DataFrame(data={'indices': indices,
                                    'percentages_estimated': percentages_estimated,
@@ -378,8 +388,8 @@ class LTOGridTransferTester:
                                    })
         return table
 
-    def analyze_phase_transition_percentages(self, normalizer=None):
-        table = self.calculate_phase_transition_percentages(normalizer=normalizer)
+    def analyze_phase_transition_percentages(self, normalizer=None, normalize_percentages=False):
+        table = self.calculate_phase_transition_percentages(normalizer=normalizer, normalize_percentages=normalize_percentages)
         table.to_csv(os.path.join(self.output_dir, 'phase_transition_percentages.csv'), index=False)
 
         fig, ax = plt.subplots(1, 1)
