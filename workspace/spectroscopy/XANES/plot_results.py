@@ -111,13 +111,16 @@ class ResultAnalyzer:
         self,
         filename,
         n_cols=3,
+        sharex=False,
         interval=5,
+        iter_list=(),
         plot_uncertainty=True,
         plot_measurements=True,
         plot_truth=True,
         label="Measured",
         linestyle=None,
         add_legend=True,
+        figsize=None,
         fig=None,
         save=True,
         make_animation=False,
@@ -135,14 +138,17 @@ class ResultAnalyzer:
 
         data = pickle.load(open(filename, "rb"))
         n = len(data["mu_list"])
-        n_plots = n // interval + 1
+        if len(iter_list) == 0:
+            iter_list = range(0, n, interval)
+        n_plots = len(iter_list)
         n_rows = int(np.ceil(n_plots / n_cols))
         if make_animation:
             fig, ax = plt.subplots(1, 1)
         else:
             if fig is None:
                 fig, ax = plt.subplots(
-                    n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3), squeeze=False
+                    n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3) if figsize is None else figsize, squeeze=False,
+                    sharex=sharex, sharey=sharex
                 )
             else:
                 ax = fig.axes
@@ -159,7 +165,7 @@ class ResultAnalyzer:
                         fig, os.path.join(self.output_dir, output_filename), 100
                     )
                 )
-            for i, iter in enumerate(range(0, n, interval)):
+            for i, iter in enumerate(iter_list):
                 i_col = i_plot % n_cols
                 i_row = i_plot // n_cols
                 if make_animation:
@@ -193,11 +199,12 @@ class ResultAnalyzer:
                     this_ax.scatter(
                         data["measured_x_list"][iter],
                         data["measured_y_list"][iter],
-                        s=4,
+                        s=14,
                         label="Measured",
                     )
                 this_ax.set_title("{} points".format(data["n_measured_list"][iter]))
                 this_ax.set_xlabel("Energy (eV)")
+                this_ax.set_ylabel("X-ray absorption")
                 this_ax.grid(True)
                 if i == 0 and add_legend:
                     this_ax.legend(frameon=False)
@@ -206,6 +213,8 @@ class ResultAnalyzer:
                     writer.grab_frame()
                     this_ax.clear()
         plt.tight_layout()
+        if sharex:
+            plt.subplots_adjust(hspace=0)  # Remove vertical space between plots
         if save and not make_animation:
             plt.savefig(
                 os.path.join(self.output_dir, output_filename), bbox_inches="tight"
@@ -216,7 +225,9 @@ class ResultAnalyzer:
         file_list,
         labels,
         n_cols=3,
+        figsize=None,
         interval=5,
+        sharex=False,
         add_legend=True,
         output_filename="comparison_intermediate.pdf",
     ):
@@ -226,7 +237,9 @@ class ResultAnalyzer:
             n = len(data["mu_list"]) if len(data["mu_list"]) > n else n
         n_plots = n // interval + 1
         n_rows = int(np.ceil(n_plots / n_cols))
-        fig, ax = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3))
+        if figsize is None:
+            figsize = (n_cols * 4, n_rows * 3)
+        fig, ax = plt.subplots(n_rows, n_cols, figsize=figsize, sharex=sharex, sharey=sharex)
 
         for i, filename in enumerate(file_list):
             self.plot_intermediate(
@@ -243,6 +256,8 @@ class ResultAnalyzer:
                 save=False,
             )
         plt.tight_layout()
+        if sharex:
+            plt.subplots_adjust(hspace=0, wspace=0)  # Remove vertical space between plots
         plt.savefig(os.path.join(self.output_dir, output_filename))
 
     def compare_estimates(
