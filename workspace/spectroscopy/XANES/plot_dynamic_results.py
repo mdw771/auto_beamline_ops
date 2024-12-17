@@ -257,7 +257,7 @@ class DynamicExperimentResultAnalyzer:
                          fit_normalizer_with_true_data=True, plot_func="plot", xtick_interval=None, value_range=(0, 1),
                          alpha=1,
                          plot_measured_data=False, plot_density_estimation=False,
-                         plot_figsize=(8, 5), imshow_figsize=(6, 3.5)):
+                         plot_figsize=(8, 5), imshow_figsize=(6, 3.5), xlim=None, ylim=None, legend=True, axis_labels=True):
         metadata = self.get_metadata(result_folder)
         tester = self.tester_class(**metadata)
         tester.load_data(normalizer=normalizer)
@@ -282,7 +282,6 @@ class DynamicExperimentResultAnalyzer:
                 estimated_data = normalizer.apply(energies, estimated_data)
             if plot_func == "plot":
                 lab = labels[i]
-                ax.plot(energies, estimated_data, label=lab if not plot_measured_data else None, linewidth=0.5, color=cmap_list[i], alpha=alpha)
                 if plot_measured_data:
                     table_meas = pd.read_csv(os.path.join(result_folder, 'measured_data_ind_{}.csv'.format(i)))
                     measured_energies = table_meas['x_measured'].to_numpy()
@@ -291,6 +290,15 @@ class DynamicExperimentResultAnalyzer:
                     if normalizer is not None:
                         measured_data = normalizer.apply(measured_energies, measured_data)
                     ax.scatter(measured_energies, measured_data, s=3, color=cmap_list[i], label=lab)
+                x = energies
+                y = estimated_data
+                if plot_measured_data:
+                    x = np.concatenate([x, measured_energies])
+                    y = np.concatenate([y, measured_data])
+                    inds = np.argsort(x)
+                    x = x[inds]
+                    y = y[inds]
+                ax.plot(x, y, label=lab if not plot_measured_data else None, linewidth=0.5, color=cmap_list[i], alpha=alpha)
             else:
                 x = np.linspace(energies_0[0], energies_0[-1], len(energies_0))
                 y = scipy.interpolate.griddata(energies.to_numpy().reshape(-1, 1), estimated_data, x.reshape(-1, 1), method='linear')[:, 0]
@@ -301,9 +309,11 @@ class DynamicExperimentResultAnalyzer:
                 ax = self.plot_density_estimation(all_measured_energies, np.linspace(energies.min(), energies.max(), 100), ax=ax)
 
             ax.grid()
-            ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), frameon=False, fontsize=10)
-            ax.set_xlabel('Energy (eV)')
-            ax.set_ylabel('Normalized\nx-ray absorption')
+            if legend:
+                ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), frameon=False, fontsize=10)
+            if axis_labels:
+                ax.set_xlabel('Energy (eV)')
+                ax.set_ylabel('Normalized\nx-ray absorption')
         else:
             data = np.stack(data).transpose()
             im = ax.imshow(data, extent=[0, data.shape[1], energies_0.max(), energies_0.min()], vmin=value_range[0], vmax=value_range[1],
@@ -311,7 +321,12 @@ class DynamicExperimentResultAnalyzer:
             if xtick_interval is not None:
                 ax.set_xticks(np.arange(x.min(), x.max(), xtick_interval))
             plt.colorbar(im, fraction=0.046, pad=0.04)
-            ax.set_ylabel('Energy (eV)')
-            ax.set_xlabel('Spectrum index')
+            if axis_labels:
+                ax.set_ylabel('Energy (eV)')
+                ax.set_xlabel('Spectrum index')
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        if ylim is not None:
+            ax.set_ylim(ylim)
         plt.tight_layout()
         fig.savefig(os.path.join(self.output_dir, output_filename))

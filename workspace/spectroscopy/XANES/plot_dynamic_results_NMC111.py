@@ -40,4 +40,15 @@ if __name__ == '__main__':
                               output_filename='NMC111_grid_transfer_all_adapt_spectra.pdf',
                               plot_figsize=(6, 3)
                               )
+    analyzer.plot_all_spectra(folders[0], list(range(len(label_list))), label_list, normalizer=normalizer, 
+                              plot_measured_data=True,
+                              fit_normalizer_with_true_data=False,
+                              alpha=0.8,
+                              plot_density_estimation=False,
+                              output_filename='NMC111_grid_transfer_all_adapt_spectra_zoom.pdf',
+                              plot_figsize=(3, 3),
+                              xlim=(8340, 8360), ylim=(1.4, 1.8),
+                              legend=False,
+                              axis_labels=False
+                              )
 
