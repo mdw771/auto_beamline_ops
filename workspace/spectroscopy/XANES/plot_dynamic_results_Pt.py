@@ -36,6 +36,7 @@ if __name__ == '__main__':
     analyzer.compare_rms_across_time(folders, labels, output_filename='Pt_grid_transfer_comparison_rms_across_time.pdf')
     analyzer.compare_calculated_percentages(folders, labels, x_data=label_val_list[1:-1], x_label='Temperature ($\!^\circ\!$C)', 
                                             read_precalculated_percentage_data=False, normalizer=normalizer, output_filename='Pt_grid_transfer_comparison_calculated_percentages.pdf')
+    analyzer.compare_maxima_across_time(folders, labels, x_data=label_val_list[1:-1], x_label='Temperature ($\!^\circ\!$C)', normalizer=normalizer, output_filename='Pt_grid_transfer_comparison_maxima_across_time.pdf')
     analyzer.plot_all_spectra(folders[0], list(range(len(label_list) - 2)), label_list[1:-1], normalizer=normalizer, output_filename='Pt_grid_transfer_all_adapt_spectra.pdf')
     # analyzer.plot_spectrum(folders, labels, 0, output_filename='Pt_grid_transfer_estimated_spectra_0.pdf')
     # analyzer.plot_spectrum(folders, labels, 21, output_filename='Pt_grid_transfer_estimated_spectra_21.pdf')

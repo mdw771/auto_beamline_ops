@@ -108,6 +108,69 @@ class DynamicExperimentResultAnalyzer:
             ax[1].grid()
             plt.tight_layout()
             fig.savefig(os.path.join(self.output_dir, os.path.splitext(output_filename)[0] + '_{}.pdf'.format(name)))
+        
+    @staticmethod    
+    def fit_maximum(x, y, window_size=5):
+        window_rad = window_size // 2
+        max_pos_int = np.argmax(y)
+        ys = y[max_pos_int - window_rad:max_pos_int - window_rad + window_size]
+        xs = x[max_pos_int - window_rad:max_pos_int - window_rad + window_size]
+        a, b, c = np.polyfit(xs, ys, 2)
+        max_pos = - b / (2 * a)
+        max_val = a * max_pos ** 2 + b * max_pos + c
+        return max_pos, max_val
+
+    def compare_maxima_across_time(self, result_folders, labels, x_data=None, x_label=None, normalizer=None, fit_normalizer_with_true_data=True, 
+                                   output_filename='comparison_maxima_across_time.pdf'):
+        fig, ax = plt.subplots(1, 1, figsize=(6, 2.5))
+        for i, folder in enumerate(result_folders):
+            true_max_pos_list = []
+            true_max_deriv_pos_list = []
+            max_pos_list = []
+            max_deriv_pos_list = []
+            metadata = self.get_metadata(folder)
+            tester = self.tester_class(**metadata)
+            tester.load_data(normalizer=normalizer)
+            flist = glob.glob(os.path.join(folder, 'estimated_data_ind_*.csv'))
+            flist = np.array(flist)[np.argsort([int(re.findall('\d+', x)[-1]) for x in flist])]
+            for i_file, f in enumerate(flist):
+                table_spectrum = pd.read_csv(f, index_col=None)
+                energies = table_spectrum['energy'].to_numpy()
+                estimated_spectrum = table_spectrum['estimated_data'].to_numpy()
+                true_spectrum = table_spectrum['true_data'].to_numpy()
+                if normalizer is not None:
+                    if fit_normalizer_with_true_data:
+                        normalizer.fit(tester.test_energies_raw, tester.test_data_all_spectra_raw[i])
+                    else:
+                        normalizer.fit(energies, estimated_spectrum)
+                    estimated_spectrum = normalizer.apply(energies, estimated_spectrum)
+                    true_spectrum = normalizer.apply(energies, true_spectrum)
+                max_pos, max_val = self.fit_maximum(energies, estimated_spectrum, window_size=9)
+                true_max_pos, true_max_val = self.fit_maximum(energies, true_spectrum, window_size=9)
+                deriv_energies, estimated_deriv = estimate_sparse_gradient(energies, estimated_spectrum)
+                deriv_energies, true_deriv = estimate_sparse_gradient(energies, true_spectrum)
+                max_deriv_pos, max_deriv_val = self.fit_maximum(deriv_energies, estimated_deriv, window_size=9)
+                true_max_deriv_pos, true_max_deriv_val = self.fit_maximum(deriv_energies, true_deriv, window_size=9)
+                max_pos_list.append(max_pos)
+                true_max_pos_list.append(true_max_pos)
+                max_deriv_pos_list.append(max_deriv_pos)
+                true_max_deriv_pos_list.append(true_max_deriv_pos)
+            if i == 0:
+                if x_data is None:
+                    x_data = np.arange(len(true_max_pos_list))
+                ax.plot(x_data, true_max_pos_list, color='gray', linestyle='--', label='Ground truth')
+                ax2 = ax.twinx()
+                ax2.plot(x_data, true_max_deriv_pos_list, color='gray', linestyle='--', label='Ground truth', linewidth=0.5)
+            ax.plot(x_data, max_pos_list, linestyle=self.style_list[i], label=labels[i])
+            ax2.plot(x_data, max_deriv_pos_list, linestyle=self.style_list[i], label=labels[i], linewidth=0.5)
+        ax.set_xlabel(x_label if x_label is not None else 'Spectrum index')
+        ax.set_ylabel('Energy of maximum\nabsorption (eV)')
+        ax2.set_ylabel('Energy of maximum\nderivative of absorption (eV)')
+        ax.grid()
+        if len(result_folders) > 1:
+            ax.legend()
+        plt.tight_layout()
+        fig.savefig(os.path.join(self.output_dir, output_filename))
 
     def compare_rms_across_time(self, result_folders, labels, output_filename='comparison_rms_across_time.pdf', read_data=True, normalizer=None, fit_normalizer_with_true_data=True):
         fig, ax = plt.subplots(1, 1, figsize=(6, 2.5))
@@ -309,11 +372,12 @@ class DynamicExperimentResultAnalyzer:
                 ax = self.plot_density_estimation(all_measured_energies, np.linspace(energies.min(), energies.max(), 100), ax=ax)
 
             ax.grid()
+            ax.tick_params(axis='both', which='major', labelsize=14)
             if legend:
                 ax.legend(loc='center left', bbox_to_anchor=(1, 0.5), frameon=False, fontsize=10)
             if axis_labels:
-                ax.set_xlabel('Energy (eV)')
-                ax.set_ylabel('Normalized\nx-ray absorption')
+                ax.set_xlabel('Energy (eV)', fontsize=16)
+                ax.set_ylabel('Normalized\nx-ray absorption', fontsize=16)
         else:
             data = np.stack(data).transpose()
             im = ax.imshow(data, extent=[0, data.shape[1], energies_0.max(), energies_0.min()], vmin=value_range[0], vmax=value_range[1],
@@ -322,8 +386,8 @@ class DynamicExperimentResultAnalyzer:
                 ax.set_xticks(np.arange(x.min(), x.max(), xtick_interval))
             plt.colorbar(im, fraction=0.046, pad=0.04)
             if axis_labels:
-                ax.set_ylabel('Energy (eV)')
-                ax.set_xlabel('Spectrum index')
+                ax.set_ylabel('Energy (eV)', fontsize=16)
+                ax.set_xlabel('Spectrum index', fontsize=16)
         if xlim is not None:
             ax.set_xlim(xlim)
         if ylim is not None:
