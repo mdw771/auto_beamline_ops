@@ -3,7 +3,7 @@ import glob
 import pickle
 import contextlib
 from typing import Optional
-
+import logging
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib
@@ -12,6 +12,8 @@ import numpy as np
 from plot_results import ResultAnalyzer
 import autobl.tools.spectroscopy.xanes as xanestools
 
+
+logging.basicConfig(level=logging.ERROR)
 
 if __name__ == '__main__':
     flist = [glob.glob('outputs/YBCO_raw_randInit/YBCO3data_*_intermediate_data.pkl')[0],
@@ -32,6 +34,7 @@ if __name__ == '__main__':
     analyzer = ResultAnalyzer(output_dir='factory')
     analyzer.compare_convergence(flist, labels, output_filename='YBCO_comparison_convergence.pdf', auc_range=(0, 30), 
                                  ref_line_y=0.005, rms_normalization_factor=1.0, normalizer=normalizer)
+    analyzer.plot_auc_multipass(flist, labels, auc_range=(0, 30), normalizer=normalizer, output_filename='YBCO_auc_multipass.pdf')
     analyzer.plot_intermediate(flist[0], interval=12, n_cols=1, sharex=True, iter_list=(0, 12, 30), figsize=(8, 6), output_filename='YBCO_intermediate.pdf')
     analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=30,
                                zoom_in_range_x=(9007, 9017), zoom_in_range_y=(1.075, 1.16), add_legend=False,

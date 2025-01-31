@@ -47,8 +47,9 @@ if __name__ == '__main__':
                               plot_density_estimation=False,
                               output_filename='NMC111_grid_transfer_all_adapt_spectra_zoom.pdf',
                               plot_figsize=(3, 3),
-                              xlim=(8340, 8360), ylim=(1.4, 1.8),
+                              xlim=(8345, 8355), ylim=(1.4, 1.8),
                               legend=False,
-                              axis_labels=False
+                              axis_labels=False,
+                              linewidth=1.5
                               )
 

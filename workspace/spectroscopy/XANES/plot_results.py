@@ -2,6 +2,7 @@ import os
 import glob
 import pickle
 import contextlib
+import logging
 from typing import Optional
 
 import matplotlib.pyplot as plt
@@ -9,8 +10,11 @@ import matplotlib.patches as patches
 import matplotlib
 import numpy as np
 
-from autobl.util import *
+from autobl.util import rms
 import autobl.tools.spectroscopy.xanes as xanestools
+
+
+logging.basicConfig(level=logging.WARNING)
 
 
 class ResultAnalyzer:
@@ -22,6 +26,26 @@ class ResultAnalyzer:
         matplotlib.rc("font", family="Times New Roman")
         matplotlib.rcParams["font.size"] = 14
         matplotlib.rcParams["pdf.fonttype"] = 42
+        
+    def load_rms_data(self, f, normalizer=None, rms_normalization_factor=1.0, x_range=None):
+        rms_list = []
+        n_pts = []
+        data = pickle.load(open(f, "rb"))
+        data_true = data["data_y"]
+        if normalizer is not None:
+            data_true = normalizer.apply(data["data_x"], data_true)
+        if x_range is not None:
+            data_true = data_true[(data["data_x"] >= x_range[0]) & (data["data_x"] <= x_range[1])]
+        for i, data_estimated in enumerate(data["mu_list"]):
+            if normalizer is not None:
+                data_estimated = normalizer.apply(data["data_x"], data_estimated)
+            if x_range is not None:
+                data_estimated = data_estimated[(data["data_x"] >= x_range[0]) & (data["data_x"] <= x_range[1])]
+            r = rms(data_estimated, data_true)
+            r = r / rms_normalization_factor
+            rms_list.append(r)
+            n_pts.append(data["n_measured_list"][i])
+        return n_pts, rms_list
 
     def compare_convergence(
         self,
@@ -44,13 +68,7 @@ class ResultAnalyzer:
             data_true = data["data_y"]
             if normalizer is not None:
                 data_true = normalizer.apply(data["data_x"], data_true)
-            for i, data_estimated in enumerate(data["mu_list"]):
-                if normalizer is not None:
-                    data_estimated = normalizer.apply(data["data_x"], data_estimated)
-                r = rms(data_estimated, data_true)
-                r = r / rms_normalization_factor
-                rms_list.append(r)
-                n_pts.append(data["n_measured_list"][i])
+            n_pts, rms_list = self.load_rms_data(f, normalizer=normalizer, rms_normalization_factor=rms_normalization_factor)
             rms_all_files.append(rms_list)
             n_pts_all_files.append(n_pts)
 
@@ -77,7 +95,7 @@ class ResultAnalyzer:
             ax.set_xlim(orig_xlim)
             ax.set_ylim(orig_ylim)
         ax.set_xlabel("Points measured")
-        ax.set_ylabel("RMS")
+        ax.set_ylabel("RMS error")
         plt.tight_layout()
         if add_legend:
             ax.legend(loc="upper right", frameon=True, ncol=1, fontsize=16)
@@ -85,7 +103,23 @@ class ResultAnalyzer:
         plt.savefig(os.path.join(self.output_dir, output_filename), bbox_inches="tight")
 
         # AUC bar chart
-        fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+        fig, ax = self.plot_auc(n_pts_all_files, rms_all_files, labels, auc_range=auc_range)
+        fig.savefig(
+            os.path.join(
+                self.output_dir, os.path.splitext(output_filename)[0] + "_auc.pdf"
+            ),
+            bbox_inches="tight",
+        )
+        
+    def calculate_auc(self, n_pts, rms_list):
+        auc = np.trapz(rms_list, n_pts)
+        return auc
+    
+    def plot_auc(self, n_pts_all_files, rms_all_files, labels, auc_range=None, fig=None):
+        if fig is None:
+            fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+        else:
+            ax = fig.axes
         auc_list = []
         for i in range(len(rms_all_files)):
             slicer = (
@@ -93,20 +127,48 @@ class ResultAnalyzer:
                 if auc_range is not None
                 else slice(None)
             )
-            auc = np.trapz(rms_all_files[i][slicer], n_pts_all_files[i][slicer])
+            auc = self.calculate_auc(rms_all_files[i][slicer], n_pts_all_files[i][slicer])
             auc_list.append(auc)
             rect = ax.bar(i, auc, label=labels[i], width=0.8)
-            ax.bar_label(rect, fmt="%.3f")
+            ax.bar_label(rect, fmt="%.2f")
         ax.set_xticks([])
         ax.set_ylabel("Area under the curve")
         ax.set_ylim((ax.get_ylim()[0], ax.get_ylim()[1] * 1.05))
-        plt.savefig(
-            os.path.join(
-                self.output_dir, os.path.splitext(output_filename)[0] + "_auc.pdf"
-            ),
-            bbox_inches="tight",
-        )
-
+        return fig, ax
+    
+    def plot_auc_multipass(self, base_data_filenames, labels, auc_range=None, normalizer=None, output_filename="auc_multipass.pdf"):
+        auc_avg_std_all_cases = []
+        fig, ax = plt.subplots(1, 1, figsize=(4, 3))
+        for i_case, base_data_filename in enumerate(base_data_filenames):
+            base_data_dir = os.path.dirname(base_data_filename)
+            n_passes = len(glob.glob(os.path.join(base_data_dir + "_pass*")))
+            pass_auc_list = []
+            for i_pass in range(n_passes):
+                folder_name = os.path.join(base_data_dir + f"_pass{i_pass}")
+                data_filenames = glob.glob(os.path.join(folder_name, "*.pkl"))
+                assert len(data_filenames) == 1, "Multiple data files found in the directory"
+                data_filename = data_filenames[0]
+                n_pts, rms_list = self.load_rms_data(data_filename, normalizer=normalizer)
+                slicer = (
+                    slice(auc_range[0], auc_range[1])
+                    if auc_range is not None
+                    else slice(None)
+                )
+                auc = self.calculate_auc(n_pts[slicer], rms_list[slicer])
+                pass_auc_list.append(auc)
+            pass_average_auc = np.mean(pass_auc_list)
+            pass_std_auc = np.std(pass_auc_list)
+            print(f'{labels[i_case]}: {pass_average_auc:.3f} ± {pass_std_auc:.3f}')
+            auc_avg_std_all_cases.append((pass_average_auc, pass_std_auc))
+            rect = ax.bar(i_case, pass_average_auc, yerr=pass_std_auc, ecolor="#404040", capsize=5, label=labels[i_case])
+            ax.bar_label(rect, fmt="%.2f")
+        ax.set_xticks([])
+        ax.set_ylabel("Area under the curve")
+        ax.set_ylim((ax.get_ylim()[0], ax.get_ylim()[1] * 1.05))
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.output_dir, output_filename), bbox_inches="tight")
+        return fig, ax
+    
     def plot_intermediate(
         self,
         filename,
@@ -280,6 +342,9 @@ class ResultAnalyzer:
 
         def plot_ax(ax, tick_interval=None, add_legend=True, linewidth=1):
             for i, f in enumerate(file_list):
+                n_pts, rms_list = self.load_rms_data(f, normalizer=normalizer, x_range=zoom_in_range_x)
+                print(f'{labels[i]}: {np.array(rms_list)[np.array(n_pts) == at_n_pts]}')
+                
                 data = pickle.load(open(f, "rb"))
                 at_iter = data["n_measured_list"].index(at_n_pts)
                 x, y = data["data_x"], data["mu_list"][at_iter]
@@ -350,14 +415,3 @@ class ResultAnalyzer:
                 bbox_inches="tight",
             )
         fig.savefig(os.path.join(self.output_dir, output_filename), bbox_inches="tight")
-
-        # plt.figure()
-        # data = pickle.load(open(file_list[0], 'rb'))
-        # at_iter = data['n_measured_list'].index(at_n_pts)
-        # x, y = data['data_x'], data['mu_list'][at_iter]
-        # plt.plot(x, np.abs(y - true_y))
-        # data = pickle.load(open(file_list[1], 'rb'))
-        # at_iter = data['n_measured_list'].index(at_n_pts)
-        # x, y = data['data_x'], data['mu_list'][at_iter]
-        # plt.plot(x, np.abs(y - true_y))
-        # plt.show()

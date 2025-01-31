@@ -62,87 +62,94 @@ plt.show()
 ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
 ref_spectra_x = energies
 
-configs = XANESExperimentGuideConfig(
-    dim_measurement_space=1,
-    num_candidates=1,
-    model_class=botorch.models.SingleTaskGP,
-    model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
-    noise_variance=1e-6,
-    # override_kernel_lengthscale=7,
-    lower_bounds=torch.tensor([energies[0]]),
-    upper_bounds=torch.tensor([energies[-1]]),
-    acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
-    acquisition_function_params={'gradient_order': 2,
-                                 'differentiation_method': 'numerical',
-                                 'reference_spectra_x': ref_spectra_x,
-                                 'reference_spectra_y': ref_spectra_y,
-                                 'phi_r': None,
-                                 'phi_g': None, #2e-2,
-                                 'phi_g2': None, #3e-4
-                                 'beta': 0.999,
-                                 'gamma': 0.95,
-                                 'addon_term_lower_bound': 3e-2,
-                                 'estimate_posterior_mean_by_interpolation': False,
-                                 'debug': False
-                                 },
+n_passes = 5
+for i_pass in range(n_passes):
+    configs = XANESExperimentGuideConfig(
+        dim_measurement_space=1,
+        num_candidates=1,
+        model_class=botorch.models.SingleTaskGP,
+        model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
+        noise_variance=1e-6,
+        # override_kernel_lengthscale=7,
+        lower_bounds=torch.tensor([energies[0]]),
+        upper_bounds=torch.tensor([energies[-1]]),
+        acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
+        acquisition_function_params={'gradient_order': 2,
+                                    'differentiation_method': 'numerical',
+                                    'reference_spectra_x': ref_spectra_x,
+                                    'reference_spectra_y': ref_spectra_y,
+                                    'phi_r': None,
+                                    'phi_g': None, #2e-2,
+                                    'phi_g2': None, #3e-4
+                                    'beta': 0.999,
+                                    'gamma': 0.95,
+                                    'addon_term_lower_bound': 3e-2,
+                                    'estimate_posterior_mean_by_interpolation': False,
+                                    'debug': False
+                                    },
 
-    optimizer_class=DiscreteOptimizer,
-    optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete,
-                      'optim_func_params': {
-                          'choices': torch.linspace(0, 1, 1000)[:, None]
-                      }
-                     },
+        optimizer_class=DiscreteOptimizer,
+        optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete,
+                        'optim_func_params': {
+                            'choices': torch.linspace(0, 1, 1000)[:, None]
+                        }
+                        },
 
-    n_updates_create_acqf_weight_func=5,
-    acqf_weight_func_floor_value=0.01,
-    acqf_weight_func_post_edge_gain=3.0,
-    acqf_weight_func_post_edge_offset=2.0,
-    acqf_weight_func_post_edge_width=1.0,
-    stopping_criterion_configs=StoppingCriterionConfig(
-        method='max_uncertainty',
-        params={'threshold': 0.03}
-    ),
-    use_spline_interpolation_for_posterior_mean=True
-)
+        n_updates_create_acqf_weight_func=5,
+        acqf_weight_func_floor_value=0.01,
+        acqf_weight_func_post_edge_gain=3.0,
+        acqf_weight_func_post_edge_offset=2.0,
+        acqf_weight_func_post_edge_width=1.0,
+        stopping_criterion_configs=StoppingCriterionConfig(
+            method='max_uncertainty',
+            params={'threshold': 0.03}
+        ),
+        use_spline_interpolation_for_posterior_mean=True
+    )
 
-analyzer_configs = ExperimentAnalyzerConfig(
-    name='YBCO3data',
-    output_dir='outputs/YBCO_raw_randInit',
-    n_plot_interval=5
-)
+    analyzer_configs = ExperimentAnalyzerConfig(
+        name='YBCO3data',
+        output_dir='outputs/YBCO_raw_randInit',
+        n_plot_interval=5
+    )
 
-experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
-experiment.build(energies, data)
-experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
-xanes_normalizer.save_state('outputs/YBCO_raw_randInit/normalizer_state.npy')
-
-
-if True:
-    # No acquisition reweighting
-    set_random_seed(124)
-    configs.n_updates_create_acqf_weight_func = None
-    analyzer_configs.output_dir = 'outputs/YBCO_raw_randInit_noReweighting'
+    if i_pass > 0:
+        set_random_seed(124 + i_pass)
+    pass_str = f'_pass{i_pass}' if n_passes > 1 else ''
+    analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit{pass_str}'
+    
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+    xanes_normalizer.save_state(f'outputs/YBCO_raw_randInit{pass_str}/normalizer_state.npy')
 
-    # Posterior standard deviation-only acquisition
-    set_random_seed(124)
-    configs.acquisition_function_class = PosteriorStandardDeviation
-    configs.acquisition_function_params = {}
-    configs.stopping_criterion_configs = None
-    analyzer_configs.output_dir = 'outputs/YBCO_raw_randInit_posteriorStddev'
-    experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
-    experiment.build(energies, data)
-    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
 
-    # Uniform sampling
-    set_random_seed(124)
-    configs.n_updates_create_acqf_weight_func = None
-    configs.stopping_criterion_configs = None
-    analyzer_configs.output_dir = 'outputs/YBCO_raw_randInit_uniformSampling'
-    experiment = SimulatedScanningExperiment(configs, guide_class=UniformSamplingExperimentGuide,
-                                             run_analysis=True, analyzer_configs=analyzer_configs)
-    experiment.build(energies, data)
-    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+    if True:
+        # No acquisition reweighting
+        set_random_seed(124 + i_pass)
+        configs.n_updates_create_acqf_weight_func = None
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_noReweighting{pass_str}'
+        experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
+        experiment.build(energies, data)
+        experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+
+        # Posterior standard deviation-only acquisition
+        set_random_seed(124 + i_pass)
+        configs.acquisition_function_class = PosteriorStandardDeviation
+        configs.acquisition_function_params = {}
+        configs.stopping_criterion_configs = None
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_posteriorStddev{pass_str}'
+        experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
+        experiment.build(energies, data)
+        experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+
+        # Uniform sampling
+        set_random_seed(124 + i_pass)
+        configs.n_updates_create_acqf_weight_func = None
+        configs.stopping_criterion_configs = None
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_uniformSampling{pass_str}'
+        experiment = SimulatedScanningExperiment(configs, guide_class=UniformSamplingExperimentGuide,
+                                                run_analysis=True, analyzer_configs=analyzer_configs)
+        experiment.build(energies, data)
+        experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
 

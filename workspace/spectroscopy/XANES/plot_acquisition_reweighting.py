@@ -103,4 +103,9 @@ ax2 = ax.twinx()
 ax2.plot(x_posterior.squeeze(), y_posterior.squeeze(), label="Posterior\n mean", color="gray", linestyle="--")
 ax2.set_ylabel("Absorption")
 fig.legend(bbox_to_anchor=(0.48, 0.87), frameon=False, ncol=1, fontsize=16)
-plt.savefig("factory/acqf_reweighting.pdf", bbox_inches='tight')
+
+
+ax2.plot(energies.squeeze(), data.squeeze(), label="Ground truth", color="red", linestyle="--")
+
+plt.show()
+# plt.savefig("factory/acqf_reweighting.pdf", bbox_inches='tight')

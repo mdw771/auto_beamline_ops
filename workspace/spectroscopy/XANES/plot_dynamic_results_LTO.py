@@ -22,7 +22,7 @@ if __name__ == '__main__':
         # 'Reference spectra'
     ]
     
-    normalizer = xanestools.XANESNormalizer(fit_ranges=((4900, 4950), (5050, 5200)), edge_loc=4983)
+    normalizer = xanestools.XANESNormalizer(fit_ranges=((4900, 4950), (5050, 5200)), edge_loc=4983) 
     
     analyzer = DynamicExperimentResultAnalyzer(tester_class=LTOGridTransferTester)
     analyzer.plot_data(folders[0], transpose=True, value_range=(None, None), normalizer=normalizer, plot_func='imshow', line_plot_labels=list(range(200)), output_filename='LTO_50C_test_data.pdf')

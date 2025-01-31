@@ -68,6 +68,7 @@ class DynamicExperimentResultAnalyzer:
                 value_range = (None, None)
             im = ax.imshow(zz, extent=[x.min(), x.max(), y.max(), y.min()], vmin=value_range[0], vmax=value_range[1],
                            cmap='jet')
+            ax.invert_yaxis()
             if xtick_interval is not None:
                 ax.set_xticks(np.arange(x.min(), x.max(), xtick_interval))
             plt.colorbar(im, fraction=0.046, pad=0.04)
@@ -274,6 +275,11 @@ class DynamicExperimentResultAnalyzer:
             ax.legend()
         plt.tight_layout()
         fig.savefig(os.path.join(self.output_dir, output_filename))
+        
+        max_error = np.max(np.abs(table['percentages_estimated'] - table['percentages_true']))
+        max_error_index = np.argmax(np.abs(table['percentages_estimated'] - table['percentages_true']))
+        max_error_percentage = max_error / table['percentages_true'][max_error_index] * 100
+        print(f'Max error: {max_error:.3f} ({max_error_percentage:.3f}%) at index {max_error_index}')
 
     def plot_spectrum(self, result_folders, labels, spectrum_index, normalizer=None, output_filename="spectrum.pdf"):
         if normalizer is not None:
@@ -320,7 +326,8 @@ class DynamicExperimentResultAnalyzer:
                          fit_normalizer_with_true_data=True, plot_func="plot", xtick_interval=None, value_range=(0, 1),
                          alpha=1,
                          plot_measured_data=False, plot_density_estimation=False,
-                         plot_figsize=(8, 5), imshow_figsize=(6, 3.5), xlim=None, ylim=None, legend=True, axis_labels=True):
+                         plot_figsize=(8, 5), imshow_figsize=(6, 3.5), xlim=None, ylim=None, legend=True, axis_labels=True,
+                         linewidth=0.5):
         metadata = self.get_metadata(result_folder)
         tester = self.tester_class(**metadata)
         tester.load_data(normalizer=normalizer)
@@ -361,7 +368,7 @@ class DynamicExperimentResultAnalyzer:
                     inds = np.argsort(x)
                     x = x[inds]
                     y = y[inds]
-                ax.plot(x, y, label=lab if not plot_measured_data else None, linewidth=0.5, color=cmap_list[i], alpha=alpha)
+                ax.plot(x, y, label=lab if not plot_measured_data else None, linewidth=linewidth, color=cmap_list[i], alpha=alpha)
             else:
                 x = np.linspace(energies_0[0], energies_0[-1], len(energies_0))
                 y = scipy.interpolate.griddata(energies.to_numpy().reshape(-1, 1), estimated_data, x.reshape(-1, 1), method='linear')[:, 0]
@@ -388,6 +395,7 @@ class DynamicExperimentResultAnalyzer:
             if axis_labels:
                 ax.set_ylabel('Energy (eV)', fontsize=16)
                 ax.set_xlabel('Spectrum index', fontsize=16)
+            ax.invert_yaxis()
         if xlim is not None:
             ax.set_xlim(xlim)
         if ylim is not None:
