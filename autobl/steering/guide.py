@@ -326,6 +326,48 @@ class GPExperimentGuide(ExperimentGuide):
         else:
             s = self.input_transform.bounds[1][dim] - self.input_transform.bounds[0][dim]
             return x * s
+        
+    def scale_by_standardizer_scale(self, y, dim=0):
+        """
+        Scale data in y-space by the standardizer scale.
+
+        Parameters
+        ----------
+        y : torch.Tensor
+            The input data.
+        dim : int, optional
+            Use the `dim`-th dimension of the standardizer scale to calculate the scaling factor.
+            If y has a shape of [n, ..., d] where d equals to the number of dimensions of the standardizer scale,
+            the scaling factors are calculated separately for each dimension and the `dim` argument is
+            disregarded.
+
+        Returns
+        -------
+        torch.Tensor
+            The scaled data.
+        """
+        return y / self.outcome_transform.stdvs[0][dim]
+    
+    def unscale_by_standardizer_scale(self, y, dim=0):
+        """
+        Un-scale data in y-space by the standardizer scale.
+
+        Parameters
+        ----------
+        y : torch.Tensor
+            The input data.
+        dim : int, optional
+            Use the `dim`-th dimension of the standardizer scale to calculate the scaling factor.
+            If y has a shape of [n, ..., d] where d equals to the number of dimensions of the standardizer scale,
+            the scaling factors are calculated separately for each dimension and the `dim` argument is
+            disregarded.
+
+        Returns
+        -------
+        torch.Tensor
+            The un-scaled data.
+        """
+        return y * self.outcome_transform.stdvs[dim]
 
     def untransform_posterior(self, posterior):
         posterior = self.outcome_transform.untransform_posterior(posterior)
@@ -356,23 +398,54 @@ class GPExperimentGuide(ExperimentGuide):
             self.acquisition_function.update_hyperparams_following_schedule()
         self.n_update_calls += 1
 
-    def create_model_object(self, x_data, y_data):
-        # Create model and compute covariance matrix.
+    def create_model_object(self, x_data, y_data, extra_params=None) -> gpytorch.models.GP:
+        """Create a GP model object.
+
+        Parameters
+        ----------
+        x_data : torch.Tensor
+            The transformed (normalized) x data.
+        y_data : torch.Tensor
+            The transformed (standardized) y data.
+        extra_params : dict, optional
+            Extra parameters to pass to the model constructor.
+
+        Returns
+        -------
+        gpytorch.models.GP
+            The GP model object.
+        """
         assert not ('train_Yvar' in self.config.model_params.keys() and self.config.noise_variance is not None)
         additional_params = {}
+        extra_params = {} if extra_params is None else extra_params
         if self.config.noise_variance is not None:
-            additional_params['train_Yvar'] = torch.full_like(y_data, self.config.noise_variance)
-        self.model = self.config.model_class(x_data, y_data, **self.config.model_params, **additional_params)
+            noise_std = self.config.noise_variance ** 0.5
+            noise_std = self.scale_by_standardizer_scale(noise_std)
+            additional_params['train_Yvar'] = torch.full_like(y_data, noise_std ** 2)
+        model = self.config.model_class(x_data, y_data, **self.config.model_params, **additional_params, **extra_params)
+        return model
+
+    def fit_kernel_hyperparameters(self, *args, **kwargs):
+        self.fitting_func = gpytorch.mlls.ExactMarginalLogLikelihood(self.model.likelihood, self.model)
+        botorch.fit.fit_gpytorch_mll(self.fitting_func)
 
     def train_model(self, x_data, y_data):
-        self.create_model_object(x_data, y_data)
+        """Build covariance and hyperparameters of the GP model using initial data.
+
+        Parameters
+        ----------
+        x_data : torch.Tensor
+            The transformed (normalized) x data.
+        y_data : torch.Tensor
+            The transformed (standardized) y data.
+        """
+        self.model = self.create_model_object(x_data, y_data)
 
         # Fit hyperparameters.
         logging.info('Kernel lengthscale before optimization (normalized & standardized): {}'.format(
             to_numpy(self.model.covar_module.lengthscale))
         )
-        self.fitting_func = gpytorch.mlls.ExactMarginalLogLikelihood(self.model.likelihood, self.model)
-        botorch.fit.fit_gpytorch_mll(self.fitting_func)
+        self.fit_kernel_hyperparameters(x_data, y_data)
         logging.info('Kernel lengthscale after optimization (normalized & standardized): {}'.format(
             to_numpy(self.model.covar_module.lengthscale))
         )
@@ -455,14 +528,33 @@ class XANESExperimentGuide(GPExperimentGuide):
         self.record_data(x_train, y_train)
 
     def create_model_object(self, x_data, y_data):
-        # Create model and compute covariance matrix.
-        assert not ('train_Yvar' in self.config.model_params.keys() and self.config.noise_variance is not None)
         additional_params = {}
-        if self.config.noise_variance is not None:
-            additional_params['train_Yvar'] = torch.full_like(y_data, self.config.noise_variance)
         if issubclass(self.config.model_class, ProjectedSpaceSingleTaskGP):
             additional_params['projection_function'] = self.feature_projection_func
-        self.model = self.config.model_class(x_data, y_data, **self.config.model_params, **additional_params)
+        return super().create_model_object(x_data, y_data, additional_params)
+
+    def fit_kernel_hyperparameters(self, x_data=None, y_data=None):
+        """Fit the kernel hyperparameters of the GP model.
+
+        Parameters
+        ----------
+        x_data : torch.Tensor, optional
+            The transformed (normalized) x data.
+        y_data : torch.Tensor, optional
+            The transformed (standardized) y data.
+        """
+        if self.config.reference_spectra_for_lengthscale_fitting is not None:
+            temp_model = self.create_model_object(
+                self.config.reference_spectra_for_lengthscale_fitting[0].reshape(-1, 1),
+                self.config.reference_spectra_for_lengthscale_fitting[1].reshape(-1, 1)
+            )
+            fitting_func = gpytorch.mlls.ExactMarginalLogLikelihood(temp_model.likelihood, temp_model)
+            botorch.fit.fit_gpytorch_mll(fitting_func)
+            lengthscale = temp_model.covar_module.lengthscale.item()
+            lengthscale = self.scale_by_normalizer_bounds(lengthscale)
+            self.model.covar_module.lengthscale = lengthscale
+        else:
+            super().fit_kernel_hyperparameters(x_data, y_data)
 
     def update(self, x_data, y_data):
         super().update(x_data, y_data)

@@ -6,6 +6,7 @@ import json
 import botorch
 import gpytorch
 import numpy as np
+import torch
 
 from autobl.steering.optimization import Optimizer, ContinuousOptimizer
 
@@ -221,6 +222,15 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
     the posterior mean in acquisition function. To use interpolation also in acquisition function, choose
     a subclass of `PosteriorStandardDeviationDerivedAcquisition`, and set `estimate_posterior_mean_by_interpolation`
     to True in `acquisition_function_params`.
+    """
+    
+    reference_spectra_for_lengthscale_fitting: tuple[torch.Tensor, torch.Tensor] = None
+    """
+    The reference spectra used to fit the lengthscale, given as a tuple of 2 tensors providing the x
+    and y data. If not provided, the lengthscale will be fitted using initial measurements.
+    
+    Note that if `override_kernel_lengthscale` is given, the given value will be used regardless 
+    of the reference spectra.
     """
 
 
