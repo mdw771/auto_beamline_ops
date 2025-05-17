@@ -2,6 +2,9 @@ import os
 import glob
 import pickle
 import sys
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 import matplotlib.pyplot as plt
 import torch
@@ -19,6 +22,7 @@ from autobl.steering.guide import *
 from autobl.steering.io_util import *
 from autobl.tools.spectroscopy.xanes import XANESNormalizer
 from autobl.util import *
+from autobl.steering.util import estimate_noise_std
 
 torch.set_default_device('cpu')
 
@@ -44,6 +48,10 @@ plt.show()
 xanes_normalizer = XANESNormalizer(fit_ranges=((8788, 8914), (9401, 10000)), edge_loc=8990)
 xanes_normalizer.fit(energies, data)
 
+# Estimate noise standard deviation
+mask = (energies > 8800) & (energies < 8900)
+noise_std = estimate_noise_std(energies[mask], ref_spectra_0[mask])
+
 # Only keep 8920 - 9080 eV
 data = data[14:232]
 ref_spectra_0 = torch.tensor(ref_spectra_0[14:232])
@@ -62,17 +70,17 @@ plt.show()
 ref_spectra_y = torch.stack([ref_spectra_0, ref_spectra_1], dim=0)
 ref_spectra_x = energies
 
-n_passes = 5
+n_passes = 1
 for i_pass in range(n_passes):
     configs = XANESExperimentGuideConfig(
         dim_measurement_space=1,
         num_candidates=1,
         model_class=botorch.models.SingleTaskGP,
         model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
-        noise_variance=1e-6,
-        # override_kernel_lengthscale=7,
+        noise_variance=noise_std ** 2,
         lower_bounds=torch.tensor([energies[0]]),
         upper_bounds=torch.tensor([energies[-1]]),
+        reference_spectra_for_lengthscale_fitting=(ref_spectra_x, ref_spectra_y[1]),
         acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
         acquisition_function_params={'gradient_order': 2,
                                     'differentiation_method': 'numerical',
@@ -102,7 +110,7 @@ for i_pass in range(n_passes):
         acqf_weight_func_post_edge_width=1.0,
         stopping_criterion_configs=StoppingCriterionConfig(
             method='max_uncertainty',
-            params={'threshold': 0.03}
+            params={'threshold': 0.02}
         ),
         use_spline_interpolation_for_posterior_mean=True
     )
