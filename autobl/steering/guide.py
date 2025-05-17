@@ -91,6 +91,29 @@ class ExperimentGuide:
         return torch.stack([lb, ub])
 
     def transform_data(self, x=None, y=None, train_x=False, train_y=False):
+        """
+        Transform data into the normalized and/or standardized space.
+        This function can also be used to find the transforms using given data
+        if such transforms are not yet learned.
+
+        Parameters
+        ----------
+        x : torch.Tensor, optional
+            The x data.
+        y : torch.Tensor, optional
+            The y data.
+        train_x : bool, optional
+            If True, the input data are used to train the input transform.
+        train_y : bool, optional
+            If True, the output data are used to train the output transform.
+
+        Returns
+        -------
+        x : torch.Tensor
+            The transformed x data.
+        y : torch.Tensor
+            The transformed y data.
+        """
         if x is not None:
             x = x.double()
         if y is not None:
@@ -116,6 +139,23 @@ class ExperimentGuide:
         return x, y
 
     def untransform_data(self, x=None, y=None):
+        """
+        Un-transform data from the normalized and/or standardized space.
+
+        Parameters
+        ----------
+        x : torch.Tensor, optional
+            The transformed x data.
+        y : torch.Tensor, optional
+            The transformed y data.
+
+        Returns
+        -------
+        x : torch.Tensor
+            The un-transformed x data.
+        y : torch.Tensor
+            The un-transformed y data.
+        """
         if x is not None and self.input_transform is not None:
             self.input_transform.training = False
             x = self.input_transform.untransform(x)
@@ -295,14 +335,22 @@ class GPExperimentGuide(ExperimentGuide):
 
     def scale_by_normalizer_bounds(self, x, dim=0):
         """
-        Scale data by 1 / span_of_normalizer_bounds.
+        Scale data in x-space by 1 / span_of_normalizer_bounds.
 
-        :param x: Any. The input data.
-        :param dim: int. Use the `dim`-th dimension of the normalizer bounds to calculate the scaling factor.
-                    If x has a shape of [n, ..., d] where d equals to the number of dimensions of the bounds,
-                    the scaling factors are calculated separately for each dimension and the `dim` argument is
-                    disregarded.
-        :return:
+        Parameters
+        ----------
+        x : Any
+            The input data.
+        dim : int, optional
+            Use the `dim`-th dimension of the normalizer bounds to calculate the scaling factor.
+            If x has a shape of [n, ..., d] where d equals to the number of dimensions of the bounds,
+            the scaling factors are calculated separately for each dimension and the `dim` argument is
+            disregarded.
+
+        Returns
+        -------
+        Any
+            The scaled data.
         """
         if isinstance(x, torch.Tensor) and x.ndim >= 2:
             return x / (self.input_transform.bounds[1] - self.input_transform.bounds[0])
@@ -312,14 +360,22 @@ class GPExperimentGuide(ExperimentGuide):
 
     def unscale_by_normalizer_bounds(self, x, dim=0):
         """
-        Scale data by span_of_normalizer_bounds.
+        Scale data in x-space by span_of_normalizer_bounds.
 
-        :param x: Any. The input data.
-        :param dim: int. Use the `dim`-th dimension of the normalizer bounds to calculate the scaling factor.
-                    If x has a shape of [n, ..., d] where d equals to the number of dimensions of the bounds,
-                    the scaling factors are calculated separately for each dimension and the `dim` argument is
-                    disregarded.
-        :return:
+        Parameters
+        ----------
+        x : Any
+            The input data.
+        dim : int, optional
+            Use the `dim`-th dimension of the normalizer bounds to calculate the scaling factor.
+            If x has a shape of [n, ..., d] where d equals to the number of dimensions of the bounds,
+            the scaling factors are calculated separately for each dimension and the `dim` argument is
+            disregarded.
+
+        Returns
+        -------
+        Any
+            The scaled data.
         """
         if isinstance(x, torch.Tensor) and x.ndim >= 2:
             return x * (self.input_transform.bounds[1] - self.input_transform.bounds[0])
@@ -594,13 +650,27 @@ class XANESExperimentGuide(GPExperimentGuide):
         """
         Get posterior mean and standard deviation.
 
-        :param x: Tensor.
-        :param transform: bool. If True, input data are normalized.
-        :param untransform: bool. If True, posterior data are unnormalized/unstandardized before returned.
-        :param use_spline_interpolation_for_mean: Option[bool]. If True, spline interpolation is used to estimate
-            the posterior mean; if false, the posterior mean will be calculated exactly using the Gaussian model.
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor.
+        transform : bool, optional
+            If True, input data are normalized.
+        untransform : bool, optional
+            If True, posterior data are unnormalized/unstandardized before returned.
+        use_spline_interpolation_for_mean : bool, optional
+            If True, spline interpolation is used to estimate the posterior mean; if false, 
+            the posterior mean will be calculated exactly using the Gaussian model.
             If None, it will be determined by config setting.
-        :return: Tensor, Tensor.
+        compute_sigma : bool, optional
+            If True, compute and return the standard deviation.
+
+        Returns
+        -------
+        mu : torch.Tensor
+            Posterior mean.
+        sigma : torch.Tensor
+            Posterior standard deviation.
         """
         if use_spline_interpolation_for_mean is None:
             use_spline_interpolation_for_mean = self.config.use_spline_interpolation_for_posterior_mean
@@ -669,15 +739,29 @@ class XANESExperimentGuide(GPExperimentGuide):
         """
         Given initial observations, estimate the location and width of the absorption edge using gradient.
 
-        :param x_init: Tensor.
-        :param y_init: Tensor.
-        :param input_is_transformed: bool. If True, input data are assumed to be already normalized (x) and
-            standardized (y). Normalization and standardization are supposed to be done with previously learned
+        Parameters
+        ----------
+        x_init : torch.Tensor
+            Initial x data points.
+        y_init : torch.Tensor
+            Initial y data points.
+        input_is_transformed : bool, optional
+            If True, input data are assumed to be already normalized (x) and standardized (y). 
+            Normalization and standardization are supposed to be done with previously learned
             transforms.
-        :param run_in_transformed_space: bool. If True, input data will be transformed if input_is_transformed is False.
-        :param return_normalized_values: bool. If True, edge location and width will be normalized before returned
+        run_in_transformed_space : bool, optional
+            If True, input data will be transformed if input_is_transformed is False.
+        return_normalized_values : bool, optional
+            If True, edge location and width will be normalized before returned
             if they are not yet in the transformed space.
-        :return: edge location, edge width.
+
+        Returns
+        -------
+        tuple
+            edge_location : float
+                The estimated location of the absorption edge.
+            edge_width : float
+                The estimated width of the absorption edge.
         """
         if not input_is_transformed and run_in_transformed_space:
             x_init, y_init = self.transform_data(x_init, y_init)
