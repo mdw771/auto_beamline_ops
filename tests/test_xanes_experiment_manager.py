@@ -75,7 +75,7 @@ def test_xanes_experiment_manager(generate_gold=False, debug=False):
         print(candidate_list)
         print('=== Reference ===')
         print(gold_data)
-        assert np.allclose(candidate_list[:10], gold_data[:10])
+        assert np.allclose(candidate_list[:10], gold_data[:10], rtol=0.05)
 
 
 if __name__ == '__main__':

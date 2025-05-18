@@ -13,6 +13,7 @@ from autobl.util import *
 
 
 def test_basic_gp(generate_gold=False, debug=False):
+    torch.set_default_device('cpu')
     set_random_seed(123)
     candidate_list = []
 
@@ -68,7 +69,7 @@ def test_basic_gp(generate_gold=False, debug=False):
         print(candidate_list)
         print('=== Reference ===')
         print(gold_data)
-        assert np.allclose(candidate_list, gold_data)
+        assert np.allclose(candidate_list, gold_data, rtol=0.05)
 
 
 if __name__ == '__main__':

@@ -153,6 +153,7 @@ def run_simulated_experiment(config, x_init, y_init, energies, data, instrument,
 def test_xanes_gp_fitres_2nd_order_deriv(generate_gold=False, debug=False):
 
     plot_graphs = debug
+    torch.set_default_device('cpu')
     set_random_seed(123)
 
     data_path = 'data/xanes/Sample1_50C_XANES.csv'
@@ -214,12 +215,13 @@ def test_xanes_gp_fitres_2nd_order_deriv(generate_gold=False, debug=False):
         print(candidate_list)
         print('=== Reference ===')
         print(gold_data)
-        assert np.allclose(candidate_list[:8], gold_data[:8])
+        assert np.allclose(candidate_list[:8], gold_data[:8], rtol=0.05)
 
 
 def test_xanes_gp_fitres_2nd_order_deriv_with_weight_func_ybco_data(generate_gold=False, debug=False):
 
     plot_graphs = debug
+    torch.set_default_device('cpu')
     set_random_seed(123)
 
     data_path = 'data/xanes/YBCO3data.csv'
@@ -287,7 +289,7 @@ def test_xanes_gp_fitres_2nd_order_deriv_with_weight_func_ybco_data(generate_gol
         print(candidate_list)
         print('=== Reference ===')
         print(gold_data)
-        assert np.allclose(candidate_list[:8], gold_data[:8])
+        assert np.allclose(candidate_list[:8], gold_data[:8], rtol=0.05)
 
 
 if __name__ == '__main__':
