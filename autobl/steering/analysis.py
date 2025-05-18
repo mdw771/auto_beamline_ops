@@ -177,10 +177,15 @@ class ScanningExperimentAnalyzer(Analyzer):
                 if self.guide.acquisition_function.gradient_order == 2:
                     acquisition_info += '_phiG2_{}'.format(self.guide.acquisition_function.phi_g2)
 
-            kernel_info = '{}_lengthscale_{:.3f}'.format(self.guide.model.covar_module.__class__.__name__,
-                                                         self.guide.unscale_by_normalizer_bounds(
-                                                             self.guide.model.covar_module.lengthscale.item()
-                                                         ))
+            kernel_info = '{}_lengthscale_{:.3f}_noiseVar_{:.3e}'.format(
+                self.guide.model.covar_module.__class__.__name__,
+                self.guide.unscale_by_normalizer_bounds(
+                    self.guide.model.covar_module.lengthscale.item()
+                ),
+                self.guide.unscale_by_normalizer_bounds(
+                    self.guide.model.likelihood.noise_covar.noise[0].item()
+                )
+            )
             if isinstance(self.guide.model.covar_module, gpytorch.kernels.MaternKernel):
                 kernel_info += '_nu_{}'.format(self.guide.model.covar_module.nu)
 

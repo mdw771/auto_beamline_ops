@@ -446,7 +446,9 @@ class GPExperimentGuide(ExperimentGuide):
         self.record_data(x_data, y_data)
         additional_params = {}
         if self.config.noise_variance is not None:
-            additional_params['noise'] = torch.full_like(y_data, self.config.noise_variance)
+            noise_std = self.config.noise_variance ** 0.5
+            noise_std = self.scale_by_standardizer_scale(noise_std)
+            additional_params['noise'] = torch.full_like(y_data, noise_std ** 2)
         new_model = self.model.condition_on_observations(x_data, y_data, **additional_params)
         # In-place update all attribute in self.model so that all references get updated.
         self.model.__dict__ = new_model.__dict__
@@ -471,7 +473,8 @@ class GPExperimentGuide(ExperimentGuide):
         gpytorch.models.GP
             The GP model object.
         """
-        assert not ('train_Yvar' in self.config.model_params.keys() and self.config.noise_variance is not None)
+        assert not ('train_Yvar' in self.config.model_params.keys() and self.config.noise_variance is not None), \
+            "train_Yvar should not be in model_params when noise_variance is provided."
         additional_params = {}
         extra_params = {} if extra_params is None else extra_params
         if self.config.noise_variance is not None:

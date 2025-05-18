@@ -2,11 +2,11 @@ import torch
 import numpy as np
 
 
-def estimate_noise_std(x: np.ndarray, y: np.ndarray) -> float:
-    """Estimate the noise standard deviation of the given 1D data.
+def estimate_noise_variance(x: np.ndarray, y: np.ndarray) -> float:
+    """Estimate the noise variance of the given 1D data.
     The data is assumed to only have a linear background, which will
-    be fit and subtracted. The noise standard deviation is then taken
-    as the standard deviation of the residuals.
+    be fit and subtracted. The noise variance is then taken
+    as the variance of the residuals.
     
     Parameters
     ----------
@@ -17,12 +17,12 @@ def estimate_noise_std(x: np.ndarray, y: np.ndarray) -> float:
 
     Returns
     -------
-    noise_std : float
-        The estimated noise standard deviation.
+    noise_variance : float
+        The estimated noise variance.
     """
     # Fit a linear background
     fit = np.polyfit(x, y, 1)
     background = np.polyval(fit, x)
     residuals = y - background
-    noise_std = np.std(residuals)
-    return noise_std
+    noise_variance = np.var(residuals)
+    return noise_variance
