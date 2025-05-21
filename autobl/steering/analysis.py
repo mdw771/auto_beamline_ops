@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import gpytorch
+from scipy.interpolate import interpn
 
 from autobl.util import *
 from autobl.steering.guide import *
@@ -40,6 +41,14 @@ class ScanningExperimentAnalyzer(Analyzer):
         self.data_x = data_x
         self.data_y = data_y
         self.enabled = True
+        self.analysis_data_x = np.linspace(self.data_x.min(), self.data_x.max(), 1000)
+        self.analysis_data_y = scipy.interpolate.interpn(
+            to_numpy(data_x).reshape(1, -1), 
+            to_numpy(data_y).reshape(-1), 
+            self.analysis_data_x.reshape(-1), 
+            bounds_error=False, 
+            fill_value=None
+        )
 
         self.build_dir()
         self.create_intermediate_figure()
@@ -89,11 +98,17 @@ class ScanningExperimentAnalyzer(Analyzer):
         n_rows = len(self.ax_intermediate)
         n_cols = len(self.ax_intermediate[0])
         self.guide.plot_posterior(
-            self.data_x, ax=self.ax_intermediate[self.i_intermediate_plot // n_cols][self.i_intermediate_plot % n_cols])
+            self.analysis_data_x, 
+            ax=self.ax_intermediate[self.i_intermediate_plot // n_cols][self.i_intermediate_plot % n_cols]
+        )
         self.ax_intermediate[self.i_intermediate_plot // n_cols][self.i_intermediate_plot % n_cols].plot(
-            to_numpy(self.data_x), self.data_y, label='Truth', color='gray', alpha=0.6, linewidth=1)
+            self.data_x, 
+            self.data_y, 
+            label='Truth', color='gray', alpha=0.6, linewidth=1
+        )
         self.ax_intermediate[self.i_intermediate_plot // n_cols][self.i_intermediate_plot % n_cols].set_title(
-            '{} points'.format(self.n_pts_measured))
+            '{} points'.format(self.n_pts_measured)
+        )
         self.ax_intermediate[self.i_intermediate_plot // n_cols][self.i_intermediate_plot % n_cols].legend()
         self.i_intermediate_plot += 1
 
@@ -144,11 +159,11 @@ class ScanningExperimentAnalyzer(Analyzer):
     @set_enabled
     def update_convergence_data(self):
         mu, _ = self.guide.get_posterior_mean_and_std(
-            to_tensor(self.data_x[:, None]),
+            to_tensor(self.analysis_data_x[:, None]),
             use_spline_interpolation_for_mean=self.guide_configs.use_spline_interpolation_for_posterior_mean
         )
         mu = mu.squeeze()
-        metric = rms(mu.detach().cpu().numpy(), to_numpy(self.data_y))
+        metric = rms(mu.detach().cpu().numpy(), to_numpy(self.analysis_data_y))
         self.n_measured_list.append(self.n_pts_measured)
         self.metric_list.append(metric)
 
@@ -182,9 +197,9 @@ class ScanningExperimentAnalyzer(Analyzer):
                 self.guide.unscale_by_normalizer_bounds(
                     self.guide.model.covar_module.lengthscale.item()
                 ),
-                self.guide.unscale_by_normalizer_bounds(
-                    self.guide.model.likelihood.noise_covar.noise[0].item()
-                )
+                (self.guide.unscale_by_standardizer_scale(
+                    np.sqrt(self.guide.model.likelihood.noise_covar.noise[0].item())
+                ) ** 2)[0].item()
             )
             if isinstance(self.guide.model.covar_module, gpytorch.kernels.MaternKernel):
                 kernel_info += '_nu_{}'.format(self.guide.model.covar_module.nu)
