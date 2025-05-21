@@ -287,3 +287,43 @@ class SimulatedScanningExperiment(ScanningExperiment):
 
         self.record_data(*self.guide.untransform_data(self.guide.data_x[len(x_init):], self.guide.data_y[len(y_init):]))
         self.analyzer.save_analysis()
+        
+        
+class SimulatedUniformSamplingExperiment(SimulatedScanningExperiment):
+    def record_data(self, data_x, data_y):
+        self.data_x_measured = data_x
+        self.data_y_measured = data_y
+    
+    def run(self, n_localization_measurements=0, n_initial_measurements=10, n_target_measurements=70,
+            initial_measurement_method='uniform', supplied_initial_points=None
+        ):
+        if self.select_scan_range:
+            # Take a very coarse scan across the whole range to localize RoI and narrow down scan range.
+            assert n_localization_measurements > 0, ('auto_narrow_down_scan_range is True, but '
+                                                     'n_localization_measurements is 0.')
+            x_localize, y_localize = self.take_initial_measurements(n_localization_measurements, method='uniform')
+            x_localize, y_localize, _ = self.adjust_scan_range_and_init_data(x_localize, y_localize)
+        # Take initial measurement within the new range if it has been narrowed down.
+        x_init, y_init = self.take_initial_measurements(n_initial_measurements, method=initial_measurement_method,
+                                                        supplied_initial_points=supplied_initial_points)
+        self.initialize_guide(x_init, y_init)
+        self.initialize_analyzer(self.analyzer_configs, n_target_measurements, n_initial_measurements)
+        self.analyzer.increment_n_points_measured(n_initial_measurements)
+        self.analyzer.update_analysis()
+        # self.analyzer.plot_data(additional_x=x_init, additional_y=y_init)
+
+        if n_target_measurements is None:
+            n_target_measurements = len(self.data_x)
+        for i in tqdm.trange(n_initial_measurements, n_target_measurements):
+            candidates = self.guide.suggest().double()
+            self.update_candidate_list(candidates)
+            y_new = self.instrument.measure(candidates).unsqueeze(-1)
+            self.guide.update(candidates, y_new)
+            self.n_pts_measured += len(candidates)
+            self.analyzer.increment_n_points_measured(by=1)
+            self.analyzer.update_analysis()
+            if self.guide.stopping_criterion.check():
+                break
+
+        self.record_data(*self.guide.untransform_data(self.guide.data_x[len(x_init):], self.guide.data_y[len(y_init):]))
+        self.analyzer.save_analysis()

@@ -187,9 +187,71 @@ class ExperimentGuide:
         y_interp = interpolator(x_interp)
         y = torch.tensor(y_interp.reshape(-1, 1), device=x.device)
         return y
+    
+    def plot_posterior(self, x, ax=None):
+        """
+        Plot the posterior mean and standard deviation of the GP model. Only works with 1-dimension feature space.
 
+        :param x: torch.Tensor[float, ...]. The points to plot.
+        """
+        if not isinstance(x, torch.Tensor):
+            x = to_tensor(x)
+        if x.ndim == 1:
+            x = x[:, None]
+        mu, sigma = self.get_posterior_mean_and_std(x)
+        mu = mu.reshape(-1).cpu().detach().numpy()
+        sigma = sigma.reshape(-1).cpu().detach().numpy()
 
+        if isinstance(x, torch.Tensor):
+            x = x.cpu().detach().numpy()
+        x = np.squeeze(x)
+        external_ax = True
+        if ax is None:
+            external_ax = False
+            fig, ax = plt.subplots(1, 2, figsize=(9, 4))
+        if not isinstance(ax, (list, tuple, np.ndarray)):
+            ax = [ax]
+        ax[0].plot(x, mu, label='Posterior mean', linewidth=0.5)
+        data_x, data_y = self.untransform_data(self.data_x, self.data_y)
+        ax[0].scatter(to_numpy(data_x.reshape(-1)), to_numpy(data_y.reshape(-1)), label='Measured data', s=4)
+        ax[0].set_title('Posterior mean and $+/-\sigma$ interval')
+        if external_ax:
+            return ax
+        else:
+            plt.show()
+    
+    
 class UniformSamplingExperimentGuide(ExperimentGuide):
+
+    def __init__(self, config: ExperimentGuideConfig, *args, **kwargs):
+        super().__init__(config, *args, **kwargs)
+        self.data_x = torch.tensor([])
+        self.data_y = torch.tensor([])
+        self.n_update_calls = 0
+        self.lb = self.config.lower_bounds[0]
+        self.ub = self.config.upper_bounds[0]
+
+    def build(self, x_train, y_train):
+        self.build_transform()
+        self.record_data(x_train, y_train)
+
+    def update(self, x_data, y_data, **kwargs):
+        self.n_update_calls += 1
+        self.data_x = x_data
+        self.data_y = y_data
+    def suggest(self):
+        x = torch.linspace(self.lb, self.ub, len(self.data_x) + 1)
+        return x.reshape(-1, 1)
+
+    def untransform_data(self, x=None, y=None):
+        return x, y
+
+    def get_posterior_mean_and_std(self, x, **kwargs):
+        mu = self.get_estimated_data_by_interpolation(x)
+        return mu, torch.zeros_like(mu)
+
+
+class BisectionUniformSamplingExperimentGuide(ExperimentGuide):
 
     def __init__(self, config: ExperimentGuideConfig, *args, **kwargs):
         super().__init__(config, *args, **kwargs)
@@ -232,38 +294,6 @@ class UniformSamplingExperimentGuide(ExperimentGuide):
     def get_posterior_mean_and_std(self, x, **kwargs):
         mu = self.get_estimated_data_by_interpolation(x)
         return mu, torch.zeros_like(mu)
-
-    def plot_posterior(self, x, ax=None):
-        """
-        Plot the posterior mean and standard deviation of the GP model. Only works with 1-dimension feature space.
-
-        :param x: torch.Tensor[float, ...]. The points to plot.
-        """
-        if not isinstance(x, torch.Tensor):
-            x = to_tensor(x)
-        if x.ndim == 1:
-            x = x[:, None]
-        mu, sigma = self.get_posterior_mean_and_std(x)
-        mu = mu.reshape(-1).cpu().detach().numpy()
-        sigma = sigma.reshape(-1).cpu().detach().numpy()
-
-        if isinstance(x, torch.Tensor):
-            x = x.cpu().detach().numpy()
-        x = np.squeeze(x)
-        external_ax = True
-        if ax is None:
-            external_ax = False
-            fig, ax = plt.subplots(1, 2, figsize=(9, 4))
-        if not isinstance(ax, (list, tuple, np.ndarray)):
-            ax = [ax]
-        ax[0].plot(x, mu, label='Posterior mean', linewidth=0.5)
-        data_x, data_y = self.untransform_data(self.data_x, self.data_y)
-        ax[0].scatter(to_numpy(data_x.reshape(-1)), to_numpy(data_y.reshape(-1)), label='Measured data', s=4)
-        ax[0].set_title('Posterior mean and $+/-\sigma$ interval')
-        if external_ax:
-            return ax
-        else:
-            plt.show()
 
 
 class GPExperimentGuide(ExperimentGuide):
