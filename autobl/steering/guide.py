@@ -434,21 +434,28 @@ class GPExperimentGuide(ExperimentGuide):
         candidate, _ = self.untransform_data(candidate)
         self.n_suggest_calls += 1
         return candidate
+    
+    def get_noise_variance(self, y_data):
+        noise_std = self.config.noise_variance ** 0.5
+        noise_std = self.scale_by_standardizer_scale(noise_std)
+        return torch.full_like(y_data, noise_std ** 2)
 
     def update(self, x_data, y_data):
         """
         Update the model using newly measured data.
 
-        :param x_data: Tensor. Features of new data.
-        :param y_data: Tensor. Observations of new data.
+        Parameters
+        ----------
+        x_data : torch.Tensor
+            The features of new data.
+        y_data : torch.Tensor
+            The observations of new data.
         """
         x_data, y_data = self.transform_data(x_data, y_data)
         self.record_data(x_data, y_data)
         additional_params = {}
         if self.config.noise_variance is not None:
-            noise_std = self.config.noise_variance ** 0.5
-            noise_std = self.scale_by_standardizer_scale(noise_std)
-            additional_params['noise'] = torch.full_like(y_data, noise_std ** 2)
+            additional_params['noise'] = self.get_noise_variance(y_data)
         new_model = self.model.condition_on_observations(x_data, y_data, **additional_params)
         # In-place update all attribute in self.model so that all references get updated.
         self.model.__dict__ = new_model.__dict__
@@ -478,9 +485,7 @@ class GPExperimentGuide(ExperimentGuide):
         additional_params = {}
         extra_params = {} if extra_params is None else extra_params
         if self.config.noise_variance is not None:
-            noise_std = self.config.noise_variance ** 0.5
-            noise_std = self.scale_by_standardizer_scale(noise_std)
-            additional_params['train_Yvar'] = torch.full_like(y_data, noise_std ** 2)
+            additional_params['train_Yvar'] = self.get_noise_variance(y_data)
         model = self.config.model_class(x_data, y_data, **self.config.model_params, **additional_params, **extra_params)
         return model
 
@@ -573,11 +578,14 @@ class GPExperimentGuide(ExperimentGuide):
 
 
 class XANESExperimentGuide(GPExperimentGuide):
+    
+    config: XANESExperimentGuideConfig
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.acqf_weight_func = None
         self.feature_projection_func = None
+        self.y_data_floor = 0
 
     def build_model(self, x_train, y_train):
         x_train, y_train = self.transform_data(x_train, y_train, train_x=False, train_y=True)
@@ -585,6 +593,7 @@ class XANESExperimentGuide(GPExperimentGuide):
             self.build_feature_projection_function(x_train, y_train)
         self.train_model(x_train, y_train)
         self.record_data(x_train, y_train)
+        self.y_data_floor = y_train.min().item()
 
     def create_model_object(self, x_data, y_data):
         additional_params = {}
@@ -614,6 +623,45 @@ class XANESExperimentGuide(GPExperimentGuide):
             self.model.covar_module.lengthscale = lengthscale
         else:
             super().fit_kernel_hyperparameters(x_data, y_data)
+            
+    def get_noise_variance(self, y_data):
+        """
+        Get the noise variance of the GP model.
+
+        Parameters
+        ----------
+        y_data : torch.Tensor
+            The transformed (standardized) y data.
+
+        Returns
+        -------
+        torch.Tensor
+            The noise variance for each data point.
+        """
+        if self.config.adaptive_noise_variance:
+            return self.get_adaptive_noise_variance(y_data)
+        else:
+            return super().get_noise_variance(y_data)
+            
+    def get_adaptive_noise_variance(self, y_data):
+        """
+        Get the adaptive noise variance of the GP model.
+
+        Parameters
+        ----------
+        y_data : torch.Tensor
+            A (n, 1) tensor giving the transformed (standardized) y data.
+
+        Returns
+        -------
+        torch.Tensor
+            A (n, 1) tensor giving the adaptive noise variance for each data point, transformed and standardized.
+        """
+        y_data = y_data.reshape(-1)
+        diff = (y_data - self.y_data_floor).clip(min=0, max=1.5)
+        noise_var = self.config.noise_variance - diff / 1.5 * 0.9 * self.config.noise_variance
+        noise_var = self.scale_by_standardizer_scale(torch.sqrt(noise_var)) ** 2
+        return noise_var.reshape(-1, 1)
 
     def update(self, x_data, y_data):
         super().update(x_data, y_data)

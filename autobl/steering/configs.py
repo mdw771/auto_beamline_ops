@@ -155,6 +155,7 @@ class GPExperimentGuideConfig(ExperimentGuideConfig):
     noise_variance: Optional[float] = None
     """Noise variance of the observations."""
 
+
     beta: float = 0.99
     """Decay factor of the weights of add-on terms in the acquisition function."""
 
@@ -195,6 +196,9 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
 
     acqf_weight_func_post_edge_decay_location: float = 50.0
     """Location where the weighting function starts to decay after the absorption edge."""
+
+    adaptive_noise_variance: bool = False
+    """If True, the noise variance will be adjusted adaptively based on the measured data."""
 
     project_func_sparseness_lower_bound: float = 0.5
     """
