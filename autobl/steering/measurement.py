@@ -22,11 +22,12 @@ class Measurement:
 
 class SimulatedMeasurement(Measurement):
 
-    def __init__(self, f: Callable = None, data: np.ndarray = None, *args, **kwargs):
+    def __init__(self, f: Callable = None, data: np.ndarray = None, noise_var: float = 0.0, *args, **kwargs):
         super().__init__(*args, **kwargs)
         assert (f is not None) or (data is not None)
         self.f = f
         self.data = data
+        self.noise_var = noise_var
         self.interp = None
         if self.data is not None:
             if isinstance(self.data, (list, tuple)):
@@ -39,21 +40,32 @@ class SimulatedMeasurement(Measurement):
             self.interp = lambda pts: scipy.interpolate.interpn(x_data, y_data, pts, bounds_error=False,
                                                                 fill_value=None)
 
-    def measure(self, x, *args, **kwargs):
+    def measure(self, x, add_noise: bool = True, *args, **kwargs):
         """
         Take measurement.
 
-        :param x: Tensor. A list of points where the values are measured. Tensor shape should be [n_pts, n_dims].
-        :return: Tensor. Measured values at `x`. Values are returned in shape [n_pts,].
+        Parameters
+        ----------
+        x: Tensor
+            A list of points where the values are measured. Tensor shape should be [n_pts, n_dims].
+        add_noise: bool
+            Whether to add noise to the measurement.
+        Returns
+        -------
+        Tensor
+            Measured values at `x`. Values are returned in shape [n_pts,].
         """
         if self.f is not None:
-            return to_tensor(self.f(x))
+            val = to_tensor(self.f(x))
         elif self.data is not None:
             x = to_numpy(x)
             x = to_tensor(self.interp(x))
-            return x
+            val = x
         else:
             raise ValueError('f or data cannot both be None.')
+        if add_noise and self.noise_var > 0:
+            val = val + torch.randn_like(val) * np.sqrt(self.noise_var)
+        return val
 
 
 class XANESExperimentalMeasurement(Measurement):

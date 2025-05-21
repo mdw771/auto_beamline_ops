@@ -2,7 +2,7 @@ import os
 import glob
 import pickle
 import logging
-from typing import Type, Dict, Tuple, Optional
+from typing import Type, Dict, Tuple, Optional, TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import scipy.interpolate
@@ -197,7 +197,26 @@ class ScanningExperiment(Experiment):
 
 class SimulatedScanningExperiment(ScanningExperiment):
 
-    def __init__(self, *args, run_analysis=True, analyzer_configs=None, **kwargs):
+    def __init__(
+        self, 
+        *args, 
+        run_analysis: bool = True, 
+        analyzer_configs: ExperimentAnalyzerConfig = None, 
+        instrument_noise_var: float = 0.0, 
+        **kwargs
+    ):
+        """
+        Simulated scanning experiment.
+        
+        Parameters
+        ----------
+        run_analysis: bool
+            Whether to run the analyzer during the experiment.
+        analyzer_configs: ExperimentAnalyzerConfig
+            The configuration for the analyzer.
+        noise_var: float
+            The variance of the noise added to the virtually measured data.
+        """
         super().__init__(*args, **kwargs)
         self.data_x = None
         self.data_y = None
@@ -206,12 +225,13 @@ class SimulatedScanningExperiment(ScanningExperiment):
         self.analyzer = None
         self.analyzer_configs = analyzer_configs
         self.run_analysis = run_analysis
+        self.instrument_noise_var = instrument_noise_var
 
     def build(self, true_data_x, true_data_y):
         self.build_instrument(true_data_x, true_data_y)
 
-    def build_instrument(self, true_data_x, true_data_y):
-        self.instrument = SimulatedMeasurement(data=(true_data_x[None, :], true_data_y))
+    def build_instrument(self, true_data_x: np.ndarray, true_data_y: np.ndarray):
+        self.instrument = SimulatedMeasurement(data=(true_data_x[None, :], true_data_y), noise_var=self.instrument_noise_var)
         self.data_x = true_data_x
         self.data_y = true_data_y
         self.data_x_truncated = self.data_x
@@ -220,10 +240,11 @@ class SimulatedScanningExperiment(ScanningExperiment):
     def initialize_analyzer(self, analyzer_configs, n_target_measurements, n_initial_measurements):
         if analyzer_configs is None:
             analyzer_configs = ExperimentAnalyzerConfig()
-        self.analyzer = ScanningExperimentAnalyzer(analyzer_configs, self.guide,
-                                                   self.data_x_truncated, self.data_y_truncated,
-                                                   n_target_measurements=n_target_measurements,
-                                                   n_init_measurements=n_initial_measurements)
+        self.analyzer = ScanningExperimentAnalyzer(
+            analyzer_configs, self.guide, self.data_x_truncated, self.data_y_truncated,
+            n_target_measurements=n_target_measurements, 
+            n_init_measurements=n_initial_measurements
+        )
         self.analyzer.enable(self.run_analysis)
 
     def adjust_scan_range_and_init_data(self, x_init, y_init):
