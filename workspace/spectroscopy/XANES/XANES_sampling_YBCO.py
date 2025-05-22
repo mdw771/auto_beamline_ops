@@ -11,18 +11,19 @@ import torch
 import numpy as np
 import pandas as pd
 import tqdm
+from botorch.acquisition import PosteriorStandardDeviation, UpperConfidenceBound, ExpectedImprovement
 
 import autobl.steering
 from autobl.steering.configs import *
 from autobl.steering.measurement import *
 from autobl.steering.acquisition import *
 from autobl.steering.optimization import *
-from autobl.steering.experiment import SimulatedScanningExperiment
+from autobl.steering.experiment import SimulatedScanningExperiment, SimulatedUniformSamplingExperiment
 from autobl.steering.guide import *
 from autobl.steering.io_util import *
 from autobl.tools.spectroscopy.xanes import XANESNormalizer
 from autobl.util import *
-from autobl.steering.util import estimate_noise_std
+from autobl.steering.util import estimate_noise_variance
 
 torch.set_default_device('cpu')
 
@@ -42,15 +43,16 @@ ref_spectra_0 = YBCORawDataset('data/raw/YBCO/YBCO_epara.0001')[0]
 ref_spectra_1 = YBCORawDataset('data/raw/YBCO/YBCO_eparc.0001')[0]
 
 # Fit detilter and normalizer
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(to_numpy(energies), data, label='data')
-plt.show()
+if False:
+    fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+    ax.plot(to_numpy(energies), data, label='data')
+    plt.show()
 xanes_normalizer = XANESNormalizer(fit_ranges=((8788, 8914), (9401, 10000)), edge_loc=8990)
 xanes_normalizer.fit(energies, data)
 
 # Estimate noise standard deviation
 mask = (energies > 8800) & (energies < 8900)
-noise_std = estimate_noise_std(energies[mask], ref_spectra_0[mask])
+noise_std = estimate_noise_variance(energies[mask], ref_spectra_0[mask])
 
 # Only keep 8920 - 9080 eV
 data = data[14:232]
@@ -59,8 +61,9 @@ ref_spectra_1 = torch.tensor(ref_spectra_1[14:232])
 energies = energies[14:232]
 energies = torch.tensor(energies)
 # y_fit = linear_fit([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)], data)
-fig, ax = plt.subplots(1, 1, figsize=(5, 3))
-ax.plot(to_numpy(energies), data, label='data')
+if False:
+    fig, ax = plt.subplots(1, 1, figsize=(5, 3))
+    ax.plot(to_numpy(energies), data, label='data')
 # ax.plot(to_numpy(energies), to_numpy(ref_spectra_0), label='ref1')
 # ax.plot(to_numpy(energies), to_numpy(ref_spectra_1), label='ref2')
 # ax.plot(to_numpy(energies), y_fit, label='fit', linestyle='--')
@@ -133,7 +136,7 @@ for i_pass in range(n_passes):
 
 
     if True:
-        # No acquisition reweighting
+        # # No acquisition reweighting
         set_random_seed(124 + i_pass)
         configs.n_updates_create_acqf_weight_func = None
         analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_noReweighting{pass_str}'
@@ -141,12 +144,32 @@ for i_pass in range(n_passes):
         experiment.build(energies, data)
         experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
 
-        # Posterior standard deviation-only acquisition
+        # # Posterior standard deviation-only acquisition
         set_random_seed(124 + i_pass)
         configs.acquisition_function_class = PosteriorStandardDeviation
         configs.acquisition_function_params = {}
         configs.stopping_criterion_configs = None
         analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_posteriorStddev{pass_str}'
+        experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
+        experiment.build(energies, data)
+        experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+        
+        # UCB
+        set_random_seed(124 + i_pass)
+        configs.acquisition_function_class = UpperConfidenceBound
+        configs.acquisition_function_params = {"beta": 13 ** 2}
+        configs.stopping_criterion_configs = None
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_UCB_kappa_13{pass_str}'
+        experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
+        experiment.build(energies, data)
+        experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+        
+        # EI
+        set_random_seed(124 + i_pass)
+        configs.acquisition_function_class = ExpectedImprovement
+        configs.acquisition_function_params = {"best_f": (data.min() - data.mean()) / data.std()}
+        configs.stopping_criterion_configs = None
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_EI{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
         experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
@@ -156,8 +179,10 @@ for i_pass in range(n_passes):
         configs.n_updates_create_acqf_weight_func = None
         configs.stopping_criterion_configs = None
         analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_uniformSampling{pass_str}'
-        experiment = SimulatedScanningExperiment(configs, guide_class=UniformSamplingExperimentGuide,
-                                                run_analysis=True, analyzer_configs=analyzer_configs)
+        experiment = SimulatedUniformSamplingExperiment(
+            configs, guide_class=UniformSamplingExperimentGuide,
+            run_analysis=True, analyzer_configs=analyzer_configs
+        )
         experiment.build(energies, data)
-        experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+        experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='uniform')
 
