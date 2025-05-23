@@ -123,11 +123,14 @@ class ScanningExperimentAnalyzer(Analyzer):
         self.intermediate_data_dict = {
             'data_x': to_numpy(self.data_x),
             'data_y': to_numpy(self.data_y),
+            'x_dense_list': to_numpy(self.analysis_data_x),
             'measured_x_list': [],
             'measured_y_list': [],
             'n_measured_list': [],
             'mu_list': [],
-            'sigma_list': []
+            'sigma_list': [],
+            'mu_dense_list': [],
+            'sigma_dense_list': [],
         }
 
     @set_enabled
@@ -138,10 +141,20 @@ class ScanningExperimentAnalyzer(Analyzer):
         )
         mu = mu.squeeze()
         sigma = sigma.squeeze()
+        
+        mu_dense, sigma_dense = self.guide.get_posterior_mean_and_std(
+            to_tensor(self.analysis_data_x[:, None]),
+            use_spline_interpolation_for_mean=self.guide_configs.use_spline_interpolation_for_posterior_mean
+        )
+        mu_dense = mu_dense.squeeze()
+        sigma_dense = sigma_dense.squeeze()
+        
         measured_x, measured_y = self.guide.untransform_data(x=self.guide.data_x, y=self.guide.data_y)
         self.intermediate_data_dict['n_measured_list'].append(self.n_pts_measured)
         self.intermediate_data_dict['mu_list'].append(to_numpy(mu))
         self.intermediate_data_dict['sigma_list'].append(to_numpy(sigma))
+        self.intermediate_data_dict['mu_dense_list'].append(to_numpy(mu_dense))
+        self.intermediate_data_dict['sigma_dense_list'].append(to_numpy(sigma_dense))
         self.intermediate_data_dict['measured_x_list'].append(to_numpy(measured_x.squeeze()))
         self.intermediate_data_dict['measured_y_list'].append(to_numpy(measured_y.squeeze()))
 
