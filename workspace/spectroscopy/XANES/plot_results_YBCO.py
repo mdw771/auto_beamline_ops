@@ -16,14 +16,19 @@ import autobl.tools.spectroscopy.xanes as xanestools
 logging.basicConfig(level=logging.ERROR)
 
 if __name__ == '__main__':
-    flist = [glob.glob('outputs/YBCO_raw_randInit/YBCO3data_*_intermediate_data.pkl')[0],
-             glob.glob('outputs/YBCO_raw_randInit_noReweighting/YBCO3data_*_intermediate_data.pkl')[0],
-             glob.glob('outputs/YBCO_raw_randInit_posteriorStddev/YBCO3data_*_intermediate_data.pkl')[0],
-             glob.glob('outputs/YBCO_raw_randInit_uniformSampling/YBCO3data_*_intermediate_data.pkl')[0]
-             ]
+    flist = [
+        glob.glob('outputs/YBCO_raw_randInit/YBCO3data_*_intermediate_data.pkl')[0],
+        glob.glob('outputs/YBCO_raw_randInit_noReweighting/YBCO3data_*_intermediate_data.pkl')[0],
+        glob.glob('outputs/YBCO_raw_randInit_posteriorStddev/YBCO3data_*_intermediate_data.pkl')[0],
+        glob.glob('outputs/YBCO_raw_randInit_UCB_kappa_13/YBCO3data_*_intermediate_data.pkl')[0],
+        glob.glob('outputs/YBCO_raw_randInit_EI/YBCO3data_*_intermediate_data.pkl')[0],
+        glob.glob('outputs/YBCO_raw_randInit_uniformSampling/YBCO3data_*_intermediate_data.pkl')[0]
+    ]
     labels = ['Comprehensive acq. + reweighting',
               'Comprehensive acq.',
-              'Posterior uncertainty only',
+              "Posterior uncertainty only",
+              "Upper confidence bound",
+              "Expected improvement",
               'Uniform sampling'
               ]
     
@@ -33,12 +38,41 @@ if __name__ == '__main__':
     
     analyzer = ResultAnalyzer(output_dir='factory')
     analyzer.compare_convergence(flist, labels, output_filename='YBCO_comparison_convergence.pdf', auc_range=(0, 30), 
-                                 ref_line_y=0.005, rms_normalization_factor=1.0, normalizer=normalizer)
-    analyzer.plot_auc_multipass(flist, labels, auc_range=(0, 30), normalizer=normalizer, output_filename='YBCO_auc_multipass.pdf')
-    analyzer.plot_intermediate(flist[0], interval=12, n_cols=1, sharex=True, iter_list=(0, 12, 30), figsize=(8, 6), output_filename='YBCO_intermediate.pdf')
-    analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=30,
+                                 ref_line_y=0.005, rms_normalization_factor=1.0, normalizer=normalizer, interpolate_on_fine_grid=True)
+    # analyzer.plot_auc_multipass(
+    #     flist,
+    #     labels,
+    #     auc_range=(0, 30), 
+    #     normalizer=normalizer, 
+    #     output_filename='YBCO_auc_multipass.pdf'
+    # )
+    analyzer.plot_intermediate(flist[0], interval=12, n_cols=1, sharex=True, iter_list=(0, 15, 30), figsize=(8, 6), output_filename='YBCO_intermediate.pdf')
+    analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=36,
                                zoom_in_range_x=(9007, 9017), zoom_in_range_y=(1.075, 1.16), add_legend=False,
-                               output_filename='YBCO_intermediate_atNPts_30.pdf')
-    analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=50, add_legend=False,
-                               normalizer=normalizer,
-                               output_filename='YBCO_intermediate_atNPts_50_norm_detilt.pdf')
+                               output_filename='YBCO_intermediate_atNPts_36.pdf')
+    # analyzer.compare_estimates(flist[0::1], labels[0::1], at_n_pts=40, add_legend=False,
+    #                            normalizer=normalizer,
+    #                            output_filename='YBCO_intermediate_atNPts_40_norm_detilt.pdf')
+    
+    analyzer.compare_convergence(
+        [
+            glob.glob('outputs/YBCO_raw_randInit_addedNoiseVar_1.0e-04_noiseVar_1.0e-04/YBCO3data_*_intermediate_data.pkl')[0],
+            glob.glob('outputs/YBCO_raw_randInit_addedNoiseVar_1.0e-04_noiseVar_1.0e-02/YBCO3data_*_intermediate_data.pkl')[0],
+            # glob.glob('outputs/YBCO_raw_randInit_addedNoiseVar_1.0e-04_noiseVar_1.0e-03/YBCO3data_*_intermediate_data.pkl')[0],
+            # glob.glob('outputs/YBCO_raw_randInit_addedNoiseVar_1.0e-04_noiseVar_1.0e-05/YBCO3data_*_intermediate_data.pkl')[0],
+            glob.glob('outputs/YBCO_raw_randInit_addedNoiseVar_1.0e-04_noiseVar_1.0e-06/YBCO3data_*_intermediate_data.pkl')[0],
+        ], 
+        [
+            '$10^{-4}$',
+            '$10^{-2}$',
+            # '$10^{-3}$',
+            # '$10^{-5}$',
+            '$10^{-6}$',
+        ], 
+        output_filename='YBCO_comparison_convergence_noise.pdf', 
+        auc_range=(0, 30), 
+        ref_line_y=None, 
+        rms_normalization_factor=1.0, 
+        normalizer=normalizer, 
+        interpolate_on_fine_grid=True
+    )

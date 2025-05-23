@@ -3,18 +3,28 @@ import glob
 import pickle
 import contextlib
 import logging
+import re
 from typing import Optional
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib
 import numpy as np
+from scipy.interpolate import interpn
 
 from autobl.util import rms
 import autobl.tools.spectroscopy.xanes as xanestools
 
 
 logging.basicConfig(level=logging.WARNING)
+
+
+def interpolate_data_on_grid(x, y, n_pts, x_range=None):
+    if x_range is None:
+        x_range = (x.min(), x.max())
+    x_fine = np.linspace(x_range[0], x_range[1], n_pts)
+    y_fine = interpn(x.reshape(1, -1), y.reshape(-1), x_fine.reshape(-1, 1))
+    return x_fine, y_fine
 
 
 class ResultAnalyzer:
@@ -26,8 +36,9 @@ class ResultAnalyzer:
         matplotlib.rc("font", family="Times New Roman")
         matplotlib.rcParams["font.size"] = 14
         matplotlib.rcParams["pdf.fonttype"] = 42
+        matplotlib.rcParams['text.usetex'] = True
         
-    def load_rms_data(self, f, normalizer=None, rms_normalization_factor=1.0, x_range=None):
+    def load_rms_data(self, f, normalizer=None, rms_normalization_factor=1.0, x_range=None, interpolate_on_fine_grid=False):
         rms_list = []
         n_pts = []
         data = pickle.load(open(f, "rb"))
@@ -36,12 +47,21 @@ class ResultAnalyzer:
             data_true = normalizer.apply(data["data_x"], data_true)
         if x_range is not None:
             data_true = data_true[(data["data_x"] >= x_range[0]) & (data["data_x"] <= x_range[1])]
-        for i, data_estimated in enumerate(data["mu_list"]):
+        for i, (data_estimated, data_estimated_dense) in enumerate(zip(data["mu_list"], data["mu_dense_list"])):
             if normalizer is not None:
                 data_estimated = normalizer.apply(data["data_x"], data_estimated)
+                data_estimated_dense = normalizer.apply(data["x_dense_list"], data_estimated_dense)
             if x_range is not None:
                 data_estimated = data_estimated[(data["data_x"] >= x_range[0]) & (data["data_x"] <= x_range[1])]
-            r = rms(data_estimated, data_true)
+                data_estimated_dense = data_estimated_dense[(data["x_dense_list"] >= x_range[0]) & (data["x_dense_list"] <= x_range[1])]
+            if interpolate_on_fine_grid:
+                data_estimated_processed = data_estimated_dense
+                _, data_true_processed = interpolate_data_on_grid(data["data_x"], data_true, 1000, x_range)
+            else:
+                data_estimated_processed = data_estimated
+                data_true_processed = data_true
+            
+            r = rms(data_estimated_processed, data_true_processed)
             r = r / rms_normalization_factor
             rms_list.append(r)
             n_pts.append(data["n_measured_list"][i])
@@ -58,6 +78,7 @@ class ResultAnalyzer:
         auc_range=None,
         rms_normalization_factor=1.0,
         normalizer=None,
+        interpolate_on_fine_grid=False,
     ):
         rms_all_files = []
         n_pts_all_files = []
@@ -68,7 +89,7 @@ class ResultAnalyzer:
             data_true = data["data_y"]
             if normalizer is not None:
                 data_true = normalizer.apply(data["data_x"], data_true)
-            n_pts, rms_list = self.load_rms_data(f, normalizer=normalizer, rms_normalization_factor=rms_normalization_factor)
+            n_pts, rms_list = self.load_rms_data(f, normalizer=normalizer, rms_normalization_factor=rms_normalization_factor, interpolate_on_fine_grid=interpolate_on_fine_grid)
             rms_all_files.append(rms_list)
             n_pts_all_files.append(n_pts)
 
@@ -127,7 +148,7 @@ class ResultAnalyzer:
                 if auc_range is not None
                 else slice(None)
             )
-            auc = self.calculate_auc(rms_all_files[i][slicer], n_pts_all_files[i][slicer])
+            auc = self.calculate_auc(n_pts_all_files[i][slicer], rms_all_files[i][slicer])
             auc_list.append(auc)
             rect = ax.bar(i, auc, label=labels[i], width=0.8)
             ax.bar_label(rect, fmt="%.2f")
@@ -141,6 +162,9 @@ class ResultAnalyzer:
         fig, ax = plt.subplots(1, 1, figsize=(4, 3))
         for i_case, base_data_filename in enumerate(base_data_filenames):
             base_data_dir = os.path.dirname(base_data_filename)
+            if re.search(r'pass\d+', base_data_dir):
+                pass_str = re.search(r'pass\d+', base_data_dir).group(0)
+                base_data_dir = base_data_dir[:-len(pass_str) - 1]
             n_passes = len(glob.glob(os.path.join(base_data_dir + "_pass*")))
             pass_auc_list = []
             for i_pass in range(n_passes):

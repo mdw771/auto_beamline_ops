@@ -82,8 +82,8 @@ for noise_var in [1e-6, 1e-5, 1e-4, 1e-3, 1e-2]:
                                     'reference_spectra_x': ref_spectra_x,
                                     'reference_spectra_y': ref_spectra_y,
                                     'phi_r': None,
-                                    'phi_g': None, #2e-2,
-                                    'phi_g2': None, #3e-4
+                                    'phi_g': 0.05, #2e-2,
+                                    'phi_g2': 0.001, #3e-4
                                     'beta': 0.999,
                                     'gamma': 0.95,
                                     'addon_term_lower_bound': 3e-2,
@@ -123,5 +123,5 @@ for noise_var in [1e-6, 1e-5, 1e-4, 1e-3, 1e-2]:
     
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs, instrument_noise_var=added_noise_variance)
     experiment.build(energies, data)
-    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+    experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
     xanes_normalizer.save_state('outputs/YBCO_raw_randInit_addedNoiseVar_{:.1e}_{}/normalizer_state.npy'.format(added_noise_variance, pass_str))

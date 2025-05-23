@@ -90,12 +90,12 @@ for i_pass in range(n_passes):
                                     'reference_spectra_x': ref_spectra_x,
                                     'reference_spectra_y': ref_spectra_y,
                                     'phi_r': None,
-                                    'phi_g': None, #2e-2,
-                                    'phi_g2': None, #3e-4
+                                    'phi_g': 0.05, #2e-2,
+                                    'phi_g2': 0.001, #3e-4
                                     'beta': 0.999,
                                     'gamma': 0.95,
                                     'addon_term_lower_bound': 3e-2,
-                                    'estimate_posterior_mean_by_interpolation': False,
+                                    'estimate_posterior_mean_by_interpolation': True,
                                     'debug': False
                                     },
 
@@ -131,7 +131,7 @@ for i_pass in range(n_passes):
     
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
-    experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+    experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
     xanes_normalizer.save_state(f'outputs/YBCO_raw_randInit{pass_str}/normalizer_state.npy')
 
 
@@ -142,7 +142,7 @@ for i_pass in range(n_passes):
         analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_noReweighting{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
-        experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
 
         # # Posterior standard deviation-only acquisition
         set_random_seed(124 + i_pass)
@@ -152,7 +152,7 @@ for i_pass in range(n_passes):
         analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_posteriorStddev{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
-        experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
         
         # UCB
         set_random_seed(124 + i_pass)
@@ -162,7 +162,7 @@ for i_pass in range(n_passes):
         analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_UCB_kappa_13{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
-        experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
         
         # EI
         set_random_seed(124 + i_pass)
@@ -172,7 +172,7 @@ for i_pass in range(n_passes):
         analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_EI{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
-        experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='random')
+        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
 
         # Uniform sampling
         set_random_seed(124 + i_pass)
@@ -184,5 +184,5 @@ for i_pass in range(n_passes):
             run_analysis=True, analyzer_configs=analyzer_configs
         )
         experiment.build(energies, data)
-        experiment.run(n_initial_measurements=20, n_target_measurements=70, initial_measurement_method='uniform')
+        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
 
