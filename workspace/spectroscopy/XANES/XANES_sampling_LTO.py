@@ -18,6 +18,7 @@ from autobl.util import *
 from autobl.steering.guide import *
 from autobl.steering.io_util import LTORawDataset
 import autobl.tools.spectroscopy.xanes as xanestools
+from autobl.steering.util import estimate_noise_variance
 
 torch.set_default_device('cpu')
 

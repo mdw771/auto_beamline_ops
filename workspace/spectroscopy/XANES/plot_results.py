@@ -28,7 +28,7 @@ def interpolate_data_on_grid(x, y, n_pts, x_range=None):
 
 
 class ResultAnalyzer:
-    style_list = ["-", "-.", ":", (0, (3, 5, 1, 5, 1, 5))]
+    style_list = ["-", "-.", ":", (0, (3, 5, 1, 5, 1, 5)), "--"]
 
     def __init__(self, output_dir="factory"):
         self.output_dir = output_dir

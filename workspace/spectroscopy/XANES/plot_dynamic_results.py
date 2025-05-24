@@ -36,6 +36,7 @@ class DynamicExperimentResultAnalyzer:
         matplotlib.rc('font', family='Times New Roman')
         matplotlib.rcParams['font.size'] = 12
         matplotlib.rcParams['pdf.fonttype'] = 42
+        matplotlib.rcParams['text.usetex'] = True
 
     @staticmethod
     def get_metadata(folder):

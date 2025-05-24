@@ -21,6 +21,9 @@ from autobl.steering.experiment import SimulatedScanningExperiment
 from autobl.steering.io_util import *
 from autobl.util import to_numpy, to_tensor, generate_quasi_random_numbers
 import autobl.tools.spectroscopy.xanes as xanestools
+from autobl.steering.util import estimate_noise_variance
+
+from plot_results import interpolate_data_on_grid
 
 torch.set_default_device('cpu')
 
@@ -102,7 +105,7 @@ class LTOGridTransferTester:
         energies = to_numpy(self.test_energies).reshape(-1)
         # self.supplied_initial_points = np.random.rand(self.n_initial_measurements) * (energies[-1] - energies[0]) + energies[0]
         # self.supplied_initial_points = np.sort(self.supplied_initial_points)
-        self.supplied_initial_points = to_tensor(generate_quasi_random_numbers(self.n_initial_measurements, energies[0], energies[-1])).double().reshape(-1, 1)
+        # self.supplied_initial_points = to_tensor(generate_quasi_random_numbers(self.n_initial_measurements, energies[0], energies[-1])).double().reshape(-1, 1)
         
 
     def _plot_data(self):
@@ -130,13 +133,16 @@ class LTOGridTransferTester:
         plt.close(fig)
 
     def get_generic_config(self):
+        noise_std = estimate_noise_variance(to_numpy(self.ref_spectra_x[self.ref_spectra_x < 4960]), to_numpy(self.ref_spectra_y[0][self.ref_spectra_x < 4960]))
+        print(f'Noise standard deviation: {noise_std}')
+        
         configs = XANESExperimentGuideConfig(
             dim_measurement_space=1,
             num_candidates=1,
             model_class=botorch.models.SingleTaskGP,
             model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
-            override_kernel_lengthscale=7,
-            noise_variance=1e-6,
+            reference_spectra_for_lengthscale_fitting=(self.ref_spectra_x, self.ref_spectra_y[1]),
+            noise_variance=noise_std ** 2,
             lower_bounds=torch.tensor([self.test_energies[0]]),
             upper_bounds=torch.tensor([self.test_energies[-1]]),
             acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
@@ -150,6 +156,7 @@ class LTOGridTransferTester:
                                          'beta': 0.999,
                                          'gamma': 0.95,
                                          'addon_term_lower_bound': 3e-2,
+                                         'estimate_posterior_mean_by_interpolation': False,
                                          'debug': False},
             n_updates_create_acqf_weight_func=5,
             acqf_weight_func_floor_value=0.01,
@@ -162,6 +169,7 @@ class LTOGridTransferTester:
                               },
             stopping_criterion_configs=StoppingCriterionConfig(
                 method='max_uncertainty',
+                n_max_measurements=40,
                 params={'threshold': 0.001},
                 n_updates_to_begin=6,
             ),
@@ -230,7 +238,7 @@ class LTOGridTransferTester:
         ax.legend()
         fig.savefig(os.path.join(self.output_dir, 'estimated_data_ind_{}.pdf'.format(ind)))
         plt.close(fig)
-
+        
         df = pd.DataFrame(data={
             'energy': energies,
             'estimated_data': estimated_data,
@@ -319,7 +327,17 @@ class LTOGridTransferTester:
             table = pd.read_csv(f, index_col=None)
             estimated_spectrum = table['estimated_data'].to_numpy()
             true_spectrum = table['true_data'].to_numpy()
-            metric_val = rms(estimated_spectrum, true_spectrum)
+            energies = table['energy'].to_numpy()
+            
+            # Interpolate on dense grid
+            dict_file = glob.glob(os.path.join(self.output_dir, "*index_{}*.pkl".format(ind)))[0]
+            with open(dict_file, 'rb') as f:
+                d = pickle.load(f)
+            dense_energy = d["x_dense_list"]
+            dense_estimated_spectrum = d["mu_dense_list"][-1]
+            _, dense_true_spectrum = interpolate_data_on_grid(energies, true_spectrum, len(dense_energy))
+            
+            metric_val = rms(dense_estimated_spectrum, dense_true_spectrum)
             rms_list.append(metric_val)
 
         np.savetxt(os.path.join(self.output_dir, 'rms_all_test_spectra.txt'), rms_list)
@@ -444,7 +462,7 @@ if __name__ == '__main__':
         ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
         output_dir='outputs/grid_transfer_LTO/grid_redoForEach/50C',
         grid_generation_method='redo_for_each',
-        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
+        n_initial_measurements=10, n_target_measurements=40, initialization_method="uniform"
     )
     tester.build()
     tester.run()
@@ -452,35 +470,37 @@ if __name__ == '__main__':
     
     #----------------------------------------------
     
-    set_random_seed(1634)
-
-    tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample3.[0-9]*",
-        ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
-        output_dir='outputs/grid_transfer_LTO/grid_initOfSelf/50C',
-        grid_generation_method='init',
-        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze(normalizer=normalizer)
+    if False:
     
-    #----------------------------------------------
-    
-    set_random_seed(1634)
+        set_random_seed(1634)
 
-    tester = LTOGridTransferTester(
-        test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample3.[0-9]*",
-        ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
-        output_dir='outputs/grid_transfer_LTO/grid_selectedRef/50C',
-        grid_generation_method='ref',
-        grid_generation_spectra_indices=(0, 5, 8, 12),
-        grid_intersect_tol=3.0,
-        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze(normalizer=normalizer)
+        tester = LTOGridTransferTester(
+            test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample3.[0-9]*",
+            ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
+            output_dir='outputs/grid_transfer_LTO/grid_initOfSelf/50C',
+            grid_generation_method='init',
+            n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
+        )
+        tester.build()
+        tester.run()
+        tester.post_analyze(normalizer=normalizer)
+        
+        #----------------------------------------------
+        
+        set_random_seed(1634)
+
+        tester = LTOGridTransferTester(
+            test_data_path='data/raw/LiTiO_XANES/rawdata', test_data_filename_pattern="LTOsample3.[0-9]*",
+            ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
+            output_dir='outputs/grid_transfer_LTO/grid_selectedRef/50C',
+            grid_generation_method='ref',
+            grid_generation_spectra_indices=(0, 5, 8, 12),
+            grid_intersect_tol=3.0,
+            n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
+        )
+        tester.build()
+        tester.run()
+        tester.post_analyze(normalizer=normalizer)
 
     #------------------------------------------------
     # Generate ref data plot
@@ -491,9 +511,9 @@ if __name__ == '__main__':
         ref_spectra_data_path='data/raw/LiTiO_XANES/rawdata', ref_data_filename_pattern="LTOsample2.[0-9]*",
         output_dir='outputs/grid_transfer_LTO/grid_initOfSelf/70C',
         grid_generation_method='init',
-        n_initial_measurements=10, n_target_measurements=40, initialization_method="supplied"
+        n_initial_measurements=10, n_target_measurements=40, initialization_method="uniform"
     )
     tester.build()
     tester.run()
-    tester.post_analyze(normalizer=normalizer)
+    # tester.post_analyze(normalizer=normalizer)
     

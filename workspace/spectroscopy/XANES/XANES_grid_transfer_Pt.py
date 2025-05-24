@@ -21,6 +21,7 @@ from autobl.steering.experiment import SimulatedScanningExperiment
 from autobl.steering.io_util import *
 from autobl.util import *
 import autobl.tools.spectroscopy.xanes as xanestools
+from autobl.steering.util import estimate_noise_variance
 
 from XANES_grid_transfer_LTO import LTOGridTransferTester
 
@@ -86,13 +87,16 @@ class PtGridTransferTester(LTOGridTransferTester):
             self._plot_data()
 
     def get_generic_config(self):
+        noise_std = estimate_noise_variance(to_numpy(self.ref_spectra_x[self.ref_spectra_x < 11500]), to_numpy(self.ref_spectra_y[0][self.ref_spectra_x < 11500]))
+        print(f'Noise standard deviation: {noise_std}')
+        
         configs = XANESExperimentGuideConfig(
             dim_measurement_space=1,
             num_candidates=1,
             model_class=botorch.models.SingleTaskGP,
             model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
-            noise_variance=1e-6,
-            # override_kernel_lengthscale=30,
+            noise_variance=noise_std ** 2,
+            reference_spectra_for_lengthscale_fitting=(self.ref_spectra_x, self.ref_spectra_y[1]),
             lower_bounds=torch.tensor([self.test_energies[0]]),
             upper_bounds=torch.tensor([self.test_energies[-1]]),
             acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
@@ -102,7 +106,7 @@ class PtGridTransferTester(LTOGridTransferTester):
                                          'reference_spectra_y': self.ref_spectra_y,
                                          'phi_r': 1e2,
                                          'phi_g': 2e-3,  # 2e-2,
-                                         'phi_g2': 2e-3,  # 3e-4
+                                         'phi_g2': 1,  # 3e-4
                                          'beta': 0.999,
                                          'gamma': 0.95,
                                          'addon_term_lower_bound': 3e-2,
@@ -146,38 +150,39 @@ if __name__ == '__main__':
         ref_data_filename_pattern="*.xmu",
         output_dir='outputs/grid_transfer_Pt/grid_redoForEach/Pt',
         grid_generation_method='redo_for_each',
-        n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
+        n_initial_measurements=10, n_target_measurements=60, initialization_method='uniform', 
     )
     tester.build()
     tester.run()
     tester.post_analyze(normalizer=normalizer)
+    
+    if False:
+        set_random_seed(126)
+        tester = PtGridTransferTester(
+            test_data_path='data/raw/Pt-XANES/Pt_xmu',
+            test_data_filename_pattern="*.xmu",
+            ref_spectra_data_path='data/raw/Pt-XANES/Pt_xmu',
+            ref_data_filename_pattern="*.xmu",
+            output_dir='outputs/grid_transfer_Pt/grid_initOfSelf/Pt',
+            grid_generation_method='init',
+            n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
+        )
+        tester.build()
+        tester.run()
+        tester.post_analyze(normalizer=normalizer)
 
-    set_random_seed(126)
-    tester = PtGridTransferTester(
-        test_data_path='data/raw/Pt-XANES/Pt_xmu',
-        test_data_filename_pattern="*.xmu",
-        ref_spectra_data_path='data/raw/Pt-XANES/Pt_xmu',
-        ref_data_filename_pattern="*.xmu",
-        output_dir='outputs/grid_transfer_Pt/grid_initOfSelf/Pt',
-        grid_generation_method='init',
-        n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze(normalizer=normalizer)
-
-    set_random_seed(126)
-    tester = PtGridTransferTester(
-        test_data_path='data/raw/Pt-XANES/Pt_xmu',
-        test_data_filename_pattern="*.xmu",
-        ref_spectra_data_path='data/raw/Pt-XANES/Pt_xmu',
-        ref_data_filename_pattern="*.xmu",
-        output_dir='outputs/grid_transfer_Pt/grid_selectedRef/Pt',
-        grid_generation_method='ref',
-        grid_generation_spectra_indices=(0, 1),
-        grid_intersect_tol=3.0,
-        n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
-    )
-    tester.build()
-    tester.run()
-    tester.post_analyze(normalizer=normalizer)
+        set_random_seed(126)
+        tester = PtGridTransferTester(
+            test_data_path='data/raw/Pt-XANES/Pt_xmu',
+            test_data_filename_pattern="*.xmu",
+            ref_spectra_data_path='data/raw/Pt-XANES/Pt_xmu',
+            ref_data_filename_pattern="*.xmu",
+            output_dir='outputs/grid_transfer_Pt/grid_selectedRef/Pt',
+            grid_generation_method='ref',
+            grid_generation_spectra_indices=(0, 1),
+            grid_intersect_tol=3.0,
+            n_initial_measurements=20, n_target_measurements=60, initialization_method='supplied', 
+        )
+        tester.build()
+        tester.run()
+        tester.post_analyze(normalizer=normalizer)
