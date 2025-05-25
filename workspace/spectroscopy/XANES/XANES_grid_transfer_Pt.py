@@ -87,15 +87,16 @@ class PtGridTransferTester(LTOGridTransferTester):
             self._plot_data()
 
     def get_generic_config(self):
-        noise_std = estimate_noise_variance(to_numpy(self.ref_spectra_x[self.ref_spectra_x < 11500]), to_numpy(self.ref_spectra_y[0][self.ref_spectra_x < 11500]))
-        print(f'Noise standard deviation: {noise_std}')
+        noise_variance = estimate_noise_variance(to_numpy(self.ref_spectra_x[self.ref_spectra_x < 11500]), to_numpy(self.ref_spectra_y[0][self.ref_spectra_x < 11500]))
+        print(f'Noise variance: {noise_variance}')
         
         configs = XANESExperimentGuideConfig(
             dim_measurement_space=1,
             num_candidates=1,
             model_class=botorch.models.SingleTaskGP,
             model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
-            noise_variance=noise_std ** 2,
+            noise_variance=noise_variance,
+            adaptive_noise_variance=True,
             reference_spectra_for_lengthscale_fitting=(self.ref_spectra_x, self.ref_spectra_y[1]),
             lower_bounds=torch.tensor([self.test_energies[0]]),
             upper_bounds=torch.tensor([self.test_energies[-1]]),
@@ -104,13 +105,13 @@ class PtGridTransferTester(LTOGridTransferTester):
                                          'differentiation_method': 'numerical',
                                          'reference_spectra_x': self.ref_spectra_x,
                                          'reference_spectra_y': self.ref_spectra_y,
-                                         'phi_r': 1e2,
-                                         'phi_g': 2e-3,  # 2e-2,
-                                         'phi_g2': 1,  # 3e-4
+                                         'phi_r': 1e3,
+                                         'phi_g': 2e-2, #2e-2,
+                                         'phi_g2': 3e-3, #3e-4
                                          'beta': 0.999,
                                          'gamma': 0.95,
                                          'addon_term_lower_bound': 3e-2,
-                                         'estimate_posterior_mean_by_interpolation': False,
+                                         'estimate_posterior_mean_by_interpolation': True,
                                          'debug': False
                                          },
 

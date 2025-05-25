@@ -60,8 +60,8 @@ ref_spectra_1 = ref_spectra_1[mask]
 energies = energies[mask]
 
 # Estimate noise standard deviation
-noise_std = estimate_noise_variance(to_numpy(energies[energies < 11500]), to_numpy(ref_spectra_0[energies < 11500]))
-print(f'Noise standard deviation: {noise_std}')
+noise_variance = estimate_noise_variance(to_numpy(energies[energies < 11500]), to_numpy(ref_spectra_0[energies < 11500]))
+print(f'Noise variance: {noise_variance}')
 
 energies = torch.tensor(energies)
 if False:
@@ -80,7 +80,8 @@ for i_pass in range(n_passes):
         num_candidates=1,
         model_class=botorch.models.SingleTaskGP,
         model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
-        noise_variance=noise_std ** 2,
+        noise_variance=noise_variance,
+        adaptive_noise_variance=True,
         reference_spectra_for_lengthscale_fitting=(ref_spectra_x, ref_spectra_y[0]),
         lower_bounds=torch.tensor([energies[0]]),
         upper_bounds=torch.tensor([energies[-1]]),
@@ -89,13 +90,13 @@ for i_pass in range(n_passes):
                                     'differentiation_method': 'numerical',
                                     'reference_spectra_x': ref_spectra_x,
                                     'reference_spectra_y': ref_spectra_y,
-                                    'phi_r': 1e2,
-                                    'phi_g': 2e-3, #2e-2,
-                                    'phi_g2': 1, #3e-4
+                                    'phi_r': 1e3,
+                                    'phi_g': 2e-2, #2e-2,
+                                    'phi_g2': 3e-3, #3e-4
                                     'beta': 0.999,
                                     'gamma': 0.95,
                                     'addon_term_lower_bound': 3e-2,
-                                    'estimate_posterior_mean_by_interpolation': False,
+                                    'estimate_posterior_mean_by_interpolation': True,
                                     'subtract_background_gradient': True,
                                     'debug': False
                                     },
@@ -115,7 +116,7 @@ for i_pass in range(n_passes):
         stopping_criterion_configs=StoppingCriterionConfig(
             method='max_uncertainty',
             n_max_measurements=60,
-            params={'threshold': 0.005}
+            params={'threshold': 0.01}
         ),
         use_spline_interpolation_for_posterior_mean=True
     )
@@ -135,7 +136,6 @@ for i_pass in range(n_passes):
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
-
 
     if True:
         # No acquisition reweighting

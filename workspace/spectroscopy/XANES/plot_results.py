@@ -79,6 +79,7 @@ class ResultAnalyzer:
         rms_normalization_factor=1.0,
         normalizer=None,
         interpolate_on_fine_grid=False,
+        indices_to_skip=None,
     ):
         rms_all_files = []
         n_pts_all_files = []
@@ -90,6 +91,11 @@ class ResultAnalyzer:
             if normalizer is not None:
                 data_true = normalizer.apply(data["data_x"], data_true)
             n_pts, rms_list = self.load_rms_data(f, normalizer=normalizer, rms_normalization_factor=rms_normalization_factor, interpolate_on_fine_grid=interpolate_on_fine_grid)
+            
+            if indices_to_skip is not None:
+                rms_list = np.array([rms_list[i] for i in range(len(rms_list)) if i not in indices_to_skip])
+                n_pts = np.array([n_pts[i] for i in range(len(n_pts)) if i not in indices_to_skip])
+            
             rms_all_files.append(rms_list)
             n_pts_all_files.append(n_pts)
 

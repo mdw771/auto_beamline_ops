@@ -52,7 +52,8 @@ xanes_normalizer.fit(energies, data)
 
 # Estimate noise standard deviation
 mask = (energies > 8800) & (energies < 8900)
-noise_std = estimate_noise_variance(energies[mask], ref_spectra_0[mask])
+noise_variance = estimate_noise_variance(energies[mask], ref_spectra_0[mask])
+print(f'Noise variance: {noise_variance}')
 
 # Only keep 8920 - 9080 eV
 data = data[14:232]
@@ -80,18 +81,19 @@ for i_pass in range(n_passes):
         num_candidates=1,
         model_class=botorch.models.SingleTaskGP,
         model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
-        noise_variance=noise_std ** 2,
+        noise_variance=noise_variance,
+        adaptive_noise_variance=True,
         lower_bounds=torch.tensor([energies[0]]),
         upper_bounds=torch.tensor([energies[-1]]),
-        reference_spectra_for_lengthscale_fitting=(ref_spectra_x, ref_spectra_y[1]),
+        reference_spectra_for_lengthscale_fitting=(ref_spectra_x, ref_spectra_y[0]),
         acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
         acquisition_function_params={'gradient_order': 2,
                                     'differentiation_method': 'numerical',
                                     'reference_spectra_x': ref_spectra_x,
                                     'reference_spectra_y': ref_spectra_y,
                                     'phi_r': None,
-                                    'phi_g': 0.05, #2e-2,
-                                    'phi_g2': 0.001, #3e-4
+                                    'phi_g': None, #2e-2,
+                                    'phi_g2': None, #3e-4
                                     'beta': 0.999,
                                     'gamma': 0.95,
                                     'addon_term_lower_bound': 3e-2,
@@ -113,72 +115,72 @@ for i_pass in range(n_passes):
         acqf_weight_func_post_edge_width=1.0,
         stopping_criterion_configs=StoppingCriterionConfig(
             method='max_uncertainty',
-            params={'threshold': 0.02}
+            params={'threshold': 0.05}
         ),
         use_spline_interpolation_for_posterior_mean=True
     )
 
     analyzer_configs = ExperimentAnalyzerConfig(
         name='YBCO3data',
-        output_dir='outputs/YBCO_raw_randInit',
+        output_dir='outputs/YBCO_raw_uniInit',
         n_plot_interval=5
     )
 
     if i_pass > 0:
         set_random_seed(124 + i_pass)
     pass_str = f'_pass{i_pass}' if n_passes > 1 else ''
-    analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit{pass_str}'
+    analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit{pass_str}'
     
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
-    xanes_normalizer.save_state(f'outputs/YBCO_raw_randInit{pass_str}/normalizer_state.npy')
+    xanes_normalizer.save_state(f'outputs/YBCO_raw_uniInit{pass_str}/normalizer_state.npy')
 
 
     if True:
         # # No acquisition reweighting
         set_random_seed(124 + i_pass)
         configs.n_updates_create_acqf_weight_func = None
-        analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_noReweighting{pass_str}'
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_noReweighting{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
-        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
+        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
 
         # # Posterior standard deviation-only acquisition
         set_random_seed(124 + i_pass)
         configs.acquisition_function_class = PosteriorStandardDeviation
         configs.acquisition_function_params = {}
         configs.stopping_criterion_configs = None
-        analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_posteriorStddev{pass_str}'
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_posteriorStddev{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
-        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
+        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
         
         # UCB
         set_random_seed(124 + i_pass)
         configs.acquisition_function_class = UpperConfidenceBound
         configs.acquisition_function_params = {"beta": 13 ** 2}
         configs.stopping_criterion_configs = None
-        analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_UCB_kappa_13{pass_str}'
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_UCB_kappa_13{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
-        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
+        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
         
         # EI
         set_random_seed(124 + i_pass)
         configs.acquisition_function_class = ExpectedImprovement
         configs.acquisition_function_params = {"best_f": (data.min() - data.mean()) / data.std()}
         configs.stopping_criterion_configs = None
-        analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_EI{pass_str}'
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_EI{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
-        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
+        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
 
         # Uniform sampling
         set_random_seed(124 + i_pass)
         configs.n_updates_create_acqf_weight_func = None
         configs.stopping_criterion_configs = None
-        analyzer_configs.output_dir = f'outputs/YBCO_raw_randInit_uniformSampling{pass_str}'
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_uniformSampling{pass_str}'
         experiment = SimulatedUniformSamplingExperiment(
             configs, guide_class=UniformSamplingExperimentGuide,
             run_analysis=True, analyzer_configs=analyzer_configs

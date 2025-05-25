@@ -16,7 +16,7 @@ from torch import normal
 
 from autobl.util import *
 import autobl.tools.spectroscopy.xanes as xanestools
-from plot_results import ResultAnalyzer
+from plot_results import ResultAnalyzer, interpolate_data_on_grid
 from XANES_grid_transfer_LTO import LTOGridTransferTester
 from XANES_grid_transfer_Pt import PtGridTransferTester
 
@@ -132,14 +132,24 @@ class DynamicExperimentResultAnalyzer:
             max_deriv_pos_list = []
             metadata = self.get_metadata(folder)
             tester = self.tester_class(**metadata)
+            tester = self.tester_class(**metadata)
             tester.load_data(normalizer=normalizer)
             flist = glob.glob(os.path.join(folder, 'estimated_data_ind_*.csv'))
             flist = np.array(flist)[np.argsort([int(re.findall('\d+', x)[-1]) for x in flist])]
-            for i_file, f in enumerate(flist):
+            pkl_flist = glob.glob(os.path.join(folder, '*intermediate_data.pkl'))
+            pkl_flist = np.array(pkl_flist)[np.argsort([int(re.findall('\d+', x)[0]) for x in pkl_flist])]
+            for i_file, (f, pkl_f) in enumerate(zip(flist, pkl_flist)):
                 table_spectrum = pd.read_csv(f, index_col=None)
                 energies = table_spectrum['energy'].to_numpy()
                 estimated_spectrum = table_spectrum['estimated_data'].to_numpy()
                 true_spectrum = table_spectrum['true_data'].to_numpy()
+                
+                with open(pkl_f, 'rb') as pkl_file:
+                    intermediate_data = pickle.load(pkl_file)
+                energies = intermediate_data['x_dense_list']
+                estimated_spectrum = intermediate_data['mu_dense_list'][-1]
+                _, true_spectrum = interpolate_data_on_grid(table_spectrum['energy'].to_numpy(), true_spectrum, len(energies))
+                
                 if normalizer is not None:
                     if fit_normalizer_with_true_data:
                         normalizer.fit(tester.test_energies_raw, tester.test_data_all_spectra_raw[i])
@@ -151,8 +161,8 @@ class DynamicExperimentResultAnalyzer:
                 true_max_pos, true_max_val = self.fit_maximum(energies, true_spectrum, window_size=9)
                 deriv_energies, estimated_deriv = estimate_sparse_gradient(energies, estimated_spectrum)
                 deriv_energies, true_deriv = estimate_sparse_gradient(energies, true_spectrum)
-                max_deriv_pos, max_deriv_val = self.fit_maximum(deriv_energies, estimated_deriv, window_size=9)
-                true_max_deriv_pos, true_max_deriv_val = self.fit_maximum(deriv_energies, true_deriv, window_size=9)
+                max_deriv_pos, max_deriv_val = self.fit_maximum(deriv_energies, estimated_deriv, window_size=21)
+                true_max_deriv_pos, true_max_deriv_val = self.fit_maximum(deriv_energies, true_deriv, window_size=21)
                 max_pos_list.append(max_pos)
                 true_max_pos_list.append(true_max_pos)
                 max_deriv_pos_list.append(max_deriv_pos)
