@@ -673,7 +673,7 @@ class XANESExperimentGuide(GPExperimentGuide):
         else:
             return super().get_noise_variance(y_data)
             
-    def get_adaptive_noise_variance(self, y_data):
+    def get_adaptive_noise_variance(self, y_data, y_diff_cutoff=1.5, decay_factor=0.01):
         """
         Get the adaptive noise variance of the GP model.
 
@@ -681,15 +681,20 @@ class XANESExperimentGuide(GPExperimentGuide):
         ----------
         y_data : torch.Tensor
             A (n, 1) tensor giving the transformed (standardized) y data.
-
+        y_diff_cutoff : float, optional
+            The cutoff value for the difference between the data and the floor value.
+        decay_factor : float, optional
+            The decay factor for the noise variance. For y - y_floor > y_diff_cutoff, the noise variance is decayed by
+            a factor of 1 - decay_factor. Decay factor in between is linearly interpolated.
+        
         Returns
         -------
         torch.Tensor
             A (n, 1) tensor giving the adaptive noise variance for each data point, transformed and standardized.
         """
         y_data = y_data.reshape(-1)
-        diff = (y_data - self.y_data_floor).clip(min=0, max=1.5)
-        noise_var = self.config.noise_variance - diff / 1.5 * 0.9 * self.config.noise_variance
+        diff = (y_data - self.y_data_floor).clip(min=0, max=y_diff_cutoff)
+        noise_var = self.config.noise_variance - diff / y_diff_cutoff * (1 - decay_factor) * self.config.noise_variance
         noise_var = self.scale_by_standardizer_scale(torch.sqrt(noise_var)) ** 2
         return noise_var.reshape(-1, 1)
 
