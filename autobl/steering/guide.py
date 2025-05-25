@@ -642,14 +642,18 @@ class XANESExperimentGuide(GPExperimentGuide):
             The transformed (standardized) y data.
         """
         if self.config.reference_spectra_for_lengthscale_fitting is not None:
+            ref_x, ref_y = self.transform_data(
+                self.config.reference_spectra_for_lengthscale_fitting[0], 
+                self.config.reference_spectra_for_lengthscale_fitting[1], 
+                train_x=False, train_y=False
+            )
             temp_model = self.create_model_object(
-                self.config.reference_spectra_for_lengthscale_fitting[0].reshape(-1, 1),
-                self.config.reference_spectra_for_lengthscale_fitting[1].reshape(-1, 1)
+                ref_x.reshape(-1, 1),
+                ref_y.reshape(-1, 1)
             )
             fitting_func = gpytorch.mlls.ExactMarginalLogLikelihood(temp_model.likelihood, temp_model)
             botorch.fit.fit_gpytorch_mll(fitting_func)
             lengthscale = temp_model.covar_module.lengthscale.item()
-            lengthscale = self.scale_by_normalizer_bounds(lengthscale)
             self.model.covar_module.lengthscale = lengthscale
         else:
             super().fit_kernel_hyperparameters(x_data, y_data)
@@ -666,7 +670,7 @@ class XANESExperimentGuide(GPExperimentGuide):
         Returns
         -------
         torch.Tensor
-            The noise variance for each data point.
+            The transformed (standardized) noise variance for each data point.
         """
         if self.config.adaptive_noise_variance:
             return self.get_adaptive_noise_variance(y_data)
