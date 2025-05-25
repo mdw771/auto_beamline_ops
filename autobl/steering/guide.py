@@ -692,10 +692,10 @@ class XANESExperimentGuide(GPExperimentGuide):
         torch.Tensor
             A (n, 1) tensor giving the adaptive noise variance for each data point, transformed and standardized.
         """
+        noise_var_standardized = self.scale_by_standardizer_scale(np.sqrt(self.config.noise_variance)) ** 2
         y_data = y_data.reshape(-1)
         diff = (y_data - self.y_data_floor).clip(min=0, max=y_diff_cutoff)
-        noise_var = self.config.noise_variance - diff / y_diff_cutoff * (1 - decay_factor) * self.config.noise_variance
-        noise_var = self.scale_by_standardizer_scale(torch.sqrt(noise_var)) ** 2
+        noise_var = noise_var_standardized - diff / y_diff_cutoff * (1 - decay_factor) * noise_var_standardized
         return noise_var.reshape(-1, 1)
 
     def update(self, x_data, y_data):
