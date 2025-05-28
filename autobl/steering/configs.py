@@ -202,7 +202,16 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
 
     adaptive_noise_variance: bool = False
     """If True, the noise variance will be adjusted adaptively based on the measured data."""
-
+    
+    adaptive_noise_variance_decay_factor: float = 0.01
+    """The decay factor for the noise variance. For y - y_floor > y_diff_cutoff, 
+    the noise variance is decayed by a factor of 1 - decay_factor. Decay factor in 
+    between is linearly interpolated.
+    """
+    
+    adaptive_noise_variance_y_diff_cutoff: float = 1.5
+    """The cutoff value for the difference between the data and the floor value."""
+    
     project_func_sparseness_lower_bound: float = 0.5
     """
     Lower bound of the sparseness function used to calculate input feature projection mapping. A lower value means

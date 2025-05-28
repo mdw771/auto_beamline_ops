@@ -673,7 +673,11 @@ class XANESExperimentGuide(GPExperimentGuide):
             The transformed (standardized) noise variance for each data point.
         """
         if self.config.adaptive_noise_variance:
-            return self.get_adaptive_noise_variance(y_data)
+            return self.get_adaptive_noise_variance(
+                y_data,
+                y_diff_cutoff=self.config.adaptive_noise_variance_y_diff_cutoff,
+                decay_factor=self.config.adaptive_noise_variance_decay_factor
+            )
         else:
             return super().get_noise_variance(y_data)
             
