@@ -184,6 +184,9 @@ class XANESExperimentGuideConfig(GPExperimentGuideConfig):
 
     acqf_weight_func_floor_value: float = 0.1
     """Floor value of the sigmoid function used as acquisition weighting function."""
+    
+    acqf_weight_func_edge_offset: float = -1.6
+    """Offset of the edge location in the acquisition weighting function, given as a multiple of edge width."""
 
     acqf_weight_func_post_edge_gain: float = 5.0
     """Post edge gain in acquisition weighting function."""
