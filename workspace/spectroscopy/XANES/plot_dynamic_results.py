@@ -373,12 +373,6 @@ class DynamicExperimentResultAnalyzer:
                     ax.scatter(measured_energies, measured_data, s=3, color=cmap_list[i], label=lab)
                 x = energies
                 y = estimated_data
-                if plot_measured_data:
-                    x = np.concatenate([x, measured_energies])
-                    y = np.concatenate([y, measured_data])
-                    inds = np.argsort(x)
-                    x = x[inds]
-                    y = y[inds]
                 ax.plot(x, y, label=lab if not plot_measured_data else None, linewidth=linewidth, color=cmap_list[i], alpha=alpha)
             else:
                 x = np.linspace(energies_0[0], energies_0[-1], len(energies_0))

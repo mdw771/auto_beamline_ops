@@ -5,6 +5,8 @@ import re
 import logging
 import json
 
+logging.basicConfig(level=logging.INFO)
+
 import matplotlib.pyplot as plt
 import matplotlib
 import torch
@@ -20,6 +22,7 @@ from autobl.steering.acquisition import *
 from autobl.steering.optimization import *
 from autobl.steering.experiment import SimulatedScanningExperiment
 from autobl.steering.io_util import *
+from autobl.steering.util import estimate_noise_variance
 from autobl.util import *
 import autobl.tools.spectroscopy.xanes as xanestools
 
@@ -77,14 +80,6 @@ class NMC111GridTransferTester(LTOGridTransferTester):
         self.test_data_all_spectra, self.test_energies = __class__.load_all_data(self.test_data_path, filename_pattern=self.test_data_filename_pattern, normalizer=normalizer)
         self.ref_data_all_spectra, self.ref_energies = __class__.load_all_data(self.ref_spectra_data_path, filename_pattern=self.ref_data_filename_pattern, normalizer=normalizer)
 
-    def get_generic_config(self):
-        configs = super().get_generic_config()
-        configs.lower_bounds = torch.tensor([self.lower_bound])
-        configs.upper_bounds = torch.tensor([self.upper_bound])
-        configs.use_spline_interpolation_for_posterior_mean = True
-        # configs.override_kernel_lengthscale = 20
-        return configs
-
     def get_gp_interpolation_for_spectrum_index(self, ind):
         query_x = torch.arange(self.lower_bound, self.upper_bound, 0.5).reshape(-1, 1)
         data_y = to_tensor(self.test_data_all_spectra[ind]).reshape(-1, 1)
@@ -96,6 +91,64 @@ class NMC111GridTransferTester(LTOGridTransferTester):
                                                       x_measured=to_numpy(data_x.squeeze()),
                                                       y_measured=to_numpy(data_y.squeeze()))
         return interpolated_data
+    
+    def get_generic_config(self):
+        ref_spectrum_for_lengthscale = self.ref_data_all_spectra[0]
+        ref_spectrum_energies = self.ref_energies[0]
+        noise_variance = estimate_noise_variance(
+            to_numpy(ref_spectrum_energies[ref_spectrum_energies < 8300]), 
+            to_numpy(ref_spectrum_for_lengthscale[ref_spectrum_energies < 8300])
+        )
+        print(f'Noise var: {noise_variance}')
+                
+        configs = XANESExperimentGuideConfig(
+            dim_measurement_space=1,
+            num_candidates=1,
+            model_class=botorch.models.SingleTaskGP,
+            model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
+            # reference_spectra_for_lengthscale_fitting=(
+            #     to_tensor(ref_spectrum_energies[ref_spectrum_energies > 8350]), 
+            #     to_tensor(ref_spectrum_for_lengthscale[ref_spectrum_energies > 8350])
+            # ),
+            override_kernel_lengthscale=17,
+            noise_variance=1e-3,
+            # noise_variance=1e-6,
+            adaptive_noise_variance=True,
+            adaptive_noise_variance_y_diff_cutoff=0.2,
+            adaptive_noise_variance_decay_factor=5e-4,
+            lower_bounds=torch.tensor([self.lower_bound]),
+            upper_bounds=torch.tensor([self.upper_bound]),
+            acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
+            acquisition_function_params={'gradient_order': 2,
+                                         'differentiation_method': 'numerical',
+                                         'reference_spectra_x': self.ref_spectra_x,
+                                         'reference_spectra_y': self.ref_spectra_y,
+                                         'phi_r': None,
+                                         'phi_g': None,
+                                         'phi_g2': None,
+                                         'beta': 0.999,
+                                         'gamma': 0.95,
+                                         'addon_term_lower_bound': 3e-2,
+                                         'estimate_posterior_mean_by_interpolation': False,
+                                         'debug': False},
+            n_updates_create_acqf_weight_func=5,
+            acqf_weight_func_floor_value=0.01,
+            acqf_weight_func_post_edge_gain=3.0,
+            optimizer_class=DiscreteOptimizer,
+            optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete,
+                              'optim_func_params': {
+                                  'choices': torch.linspace(0, 1, 1000)[:, None]
+                              }
+                              },
+            stopping_criterion_configs=StoppingCriterionConfig(
+                method='max_uncertainty',
+                n_max_measurements=40,
+                params={'threshold': 0.001},
+                n_updates_to_begin=6,
+            ),
+            use_spline_interpolation_for_posterior_mean=False
+        )
+        return configs
     
     def run(self):
         if self.grid_generation_method != 'redo_for_each':
@@ -168,7 +221,7 @@ class NMC111GridTransferTester(LTOGridTransferTester):
 
 
 if __name__ == '__main__':
-    normalizer = xanestools.XANESNormalizer(fit_ranges=((8234, 8312), (8385, 8481)), edge_loc=8343, normalization_order=1)
+    normalizer = xanestools.XANESNormalizer(fit_ranges=((8200, 8325), (8380, 8481)), edge_loc=8343, normalization_order=1)
     
     set_random_seed(126)
     tester = NMC111GridTransferTester(

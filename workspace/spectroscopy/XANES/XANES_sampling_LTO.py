@@ -1,6 +1,9 @@
 import os
 import glob
 import pickle
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 import matplotlib.pyplot as plt
 import torch
@@ -27,7 +30,7 @@ set_random_seed(123)
 dataset = LTORawDataset('data/raw/LiTiO_XANES/rawdata', filename_pattern="LTOsample3.[0-9]*")
 data_all_spectra = dataset.data
 energies = dataset.energies_ev
-data = data_all_spectra[len(data_all_spectra) // 2]
+data = data_all_spectra[91]
 
 plt.figure()
 plt.plot(energies, data)
@@ -36,9 +39,12 @@ plt.show()
 normalizer = xanestools.XANESNormalizer()
 normalizer.fit(energies, data, fit_ranges=((4900, 4950), (5100, 5200)))
 
+noise_variance = estimate_noise_variance(to_numpy(energies[energies < 4960]), to_numpy(data_all_spectra[0][energies < 4960]))
+print("noise_variance: {}".format(noise_variance))
+
 mask = (energies >= 4936) & (energies <= 5006)
 data_all_spectra = data_all_spectra[:, mask]
-data = data_all_spectra[len(data_all_spectra) // 2]
+data = data_all_spectra[91]
 energies = energies[mask]
 energies = torch.tensor(energies)
 ref_spectra_0 = torch.tensor(data_all_spectra[0])
@@ -51,22 +57,27 @@ configs = XANESExperimentGuideConfig(
     num_candidates=1,
     model_class=botorch.models.SingleTaskGP,
     model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
-    override_kernel_lengthscale=7,
-    noise_variance=1e-6,
+    reference_spectra_for_lengthscale_fitting=(
+        to_tensor(ref_spectra_x), 
+        to_tensor(ref_spectra_y[0])
+    ),
+    noise_variance=noise_variance,
     lower_bounds=torch.tensor([energies[0]]),
     upper_bounds=torch.tensor([energies[-1]]),
     acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
-    acquisition_function_params={'gradient_order': 2,
-                                 'differentiation_method': 'numerical',
-                                 'reference_spectra_x': ref_spectra_x,
-                                 'reference_spectra_y': ref_spectra_y,
-                                 'phi_r': None, #1e3,
-                                 'phi_g': None, #1e-2,
-                                 'phi_g2': None, #1e-4,
-                                 'beta': 0.999,
-                                 'gamma': 0.95,
-                                 'addon_term_lower_bound': 3e-2,
-                                 'debug': False},
+    acquisition_function_params={
+        'gradient_order': 2,
+        'differentiation_method': 'numerical',
+        'reference_spectra_x': ref_spectra_x,
+        'reference_spectra_y': ref_spectra_y,
+        'phi_r': 1e4,
+        'phi_g': 1e-1,
+        'phi_g2': 1e-3,
+        'beta': 0.999,
+        'gamma': 0.95,
+        'addon_term_lower_bound': 3e-2,
+        'debug': False
+    },
     n_updates_create_acqf_weight_func=5,
     acqf_weight_func_floor_value=0.01,
     acqf_weight_func_post_edge_gain=3.0,
@@ -82,24 +93,24 @@ configs = XANESExperimentGuideConfig(
     
     stopping_criterion_configs=StoppingCriterionConfig(
         method='max_uncertainty',
-        params={'threshold': 0.01}
+        params={'threshold': 0.0}
     ),
     use_spline_interpolation_for_posterior_mean=True
 )
 
 analyzer_configs = ExperimentAnalyzerConfig(
     name='Sample1_50C_XANES',
-    output_dir='outputs/LTO_raw_randInit',
+    output_dir='outputs/LTO_raw_uniInit',
     n_plot_interval=5
 )
 
-normalizer.save_state('outputs/LTO_raw_randInit/normalizer_state.npy')
+normalizer.save_state('outputs/LTO_raw_uniInit/normalizer_state.npy')
 
 experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
 experiment.build(energies, data)
-experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='random')
+experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
 
-if True:
+if False:
     set_random_seed(124)
     configs.n_updates_create_acqf_weight_func = None
     analyzer_configs.output_dir = 'outputs/LTO_raw_randInit_noReweighting'

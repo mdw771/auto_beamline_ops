@@ -5,6 +5,8 @@ import re
 import logging
 import json
 
+logging.basicConfig(level=logging.INFO)
+
 import matplotlib.pyplot as plt
 import matplotlib
 import torch
@@ -133,16 +135,18 @@ class LTOGridTransferTester:
         plt.close(fig)
 
     def get_generic_config(self):
-        noise_std = estimate_noise_variance(to_numpy(self.ref_spectra_x[self.ref_spectra_x < 4960]), to_numpy(self.ref_spectra_y[0][self.ref_spectra_x < 4960]))
-        print(f'Noise standard deviation: {noise_std}')
+        noise_variance = estimate_noise_variance(to_numpy(self.ref_spectra_x[self.ref_spectra_x < 4960]), to_numpy(self.ref_spectra_y[0][self.ref_spectra_x < 4960]))
+        print(f'Noise variance: {noise_variance}')
         
         configs = XANESExperimentGuideConfig(
             dim_measurement_space=1,
             num_candidates=1,
             model_class=botorch.models.SingleTaskGP,
             model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
-            reference_spectra_for_lengthscale_fitting=(self.ref_spectra_x, self.ref_spectra_y[1]),
-            noise_variance=noise_std ** 2,
+            # reference_spectra_for_lengthscale_fitting=(self.ref_spectra_x, self.ref_spectra_y[0]),
+            override_kernel_lengthscale=9.1,
+            noise_variance=noise_variance,
+            adaptive_noise_variance=True,
             lower_bounds=torch.tensor([self.test_energies[0]]),
             upper_bounds=torch.tensor([self.test_energies[-1]]),
             acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
@@ -150,17 +154,18 @@ class LTOGridTransferTester:
                                          'differentiation_method': 'numerical',
                                          'reference_spectra_x': self.ref_spectra_x,
                                          'reference_spectra_y': self.ref_spectra_y,
-                                         'phi_r': None,
-                                         'phi_g': None,
-                                         'phi_g2': None,
+                                         'phi_r': 1e2,
+                                         'phi_g': 1e-1,
+                                         'phi_g2': 1e-3,
                                          'beta': 0.999,
                                          'gamma': 0.95,
                                          'addon_term_lower_bound': 3e-2,
-                                         'estimate_posterior_mean_by_interpolation': False,
+                                         'estimate_posterior_mean_by_interpolation': True,
                                          'debug': False},
             n_updates_create_acqf_weight_func=5,
             acqf_weight_func_floor_value=0.01,
             acqf_weight_func_post_edge_gain=3.0,
+            # acqf_weight_func_edge_offset=-2.5,
             optimizer_class=DiscreteOptimizer,
             optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete,
                               'optim_func_params': {
@@ -329,15 +334,19 @@ class LTOGridTransferTester:
             true_spectrum = table['true_data'].to_numpy()
             energies = table['energy'].to_numpy()
             
-            # Interpolate on dense grid
-            dict_file = glob.glob(os.path.join(self.output_dir, "*index_{}*.pkl".format(ind)))[0]
-            with open(dict_file, 'rb') as f:
-                d = pickle.load(f)
-            dense_energy = d["x_dense_list"]
-            dense_estimated_spectrum = d["mu_dense_list"][-1]
-            _, dense_true_spectrum = interpolate_data_on_grid(energies, true_spectrum, len(dense_energy))
-            
-            metric_val = rms(dense_estimated_spectrum, dense_true_spectrum)
+            try:
+                # Interpolate on dense grid
+                dict_file = glob.glob(os.path.join(self.output_dir, "*index_{}*.pkl".format(ind)))[0]
+                with open(dict_file, 'rb') as f:
+                    d = pickle.load(f)
+                dense_energy = d["x_dense_list"]
+                dense_estimated_spectrum = d["mu_dense_list"][-1]
+                _, dense_true_spectrum = interpolate_data_on_grid(energies, true_spectrum, len(dense_energy))
+                
+                metric_val = rms(dense_estimated_spectrum, dense_true_spectrum)
+            except:
+                logging.warning('No dense grid data found for spectrum index {}.'.format(ind))
+                metric_val = rms(estimated_spectrum, true_spectrum)
             rms_list.append(metric_val)
 
         np.savetxt(os.path.join(self.output_dir, 'rms_all_test_spectra.txt'), rms_list)
