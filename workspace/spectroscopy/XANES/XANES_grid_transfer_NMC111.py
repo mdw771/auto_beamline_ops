@@ -114,7 +114,7 @@ class NMC111GridTransferTester(LTOGridTransferTester):
             noise_variance=1e-3,
             # noise_variance=1e-6,
             adaptive_noise_variance=True,
-            adaptive_noise_variance_y_diff_cutoff=0.2,
+            adaptive_noise_variance_y_diff_cutoff=0.6,
             adaptive_noise_variance_decay_factor=5e-4,
             lower_bounds=torch.tensor([self.lower_bound]),
             upper_bounds=torch.tensor([self.upper_bound]),
@@ -221,7 +221,7 @@ class NMC111GridTransferTester(LTOGridTransferTester):
 
 
 if __name__ == '__main__':
-    normalizer = xanestools.XANESNormalizer(fit_ranges=((8200, 8325), (8380, 8481)), edge_loc=8343, normalization_order=1)
+    normalizer = xanestools.XANESNormalizer(fit_ranges=((8200, 8325), (8385, 8481)), edge_loc=8343, normalization_order=1)
     
     set_random_seed(126)
     tester = NMC111GridTransferTester(
