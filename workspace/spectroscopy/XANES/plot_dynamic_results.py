@@ -280,7 +280,7 @@ class DynamicExperimentResultAnalyzer:
         if plot_truth:
             ax.plot(x_data, np.clip(table['percentages_true'] * 100, 0, 100), linestyle='--', color='gray', label='Ground truth')
         ax.set_xlabel(x_label)
-        ax.set_ylabel('Phase transition percentage (%)')
+        ax.set_ylabel('Phase transition percentage (\%)')
         ax.grid()
         if legend:
             ax.legend()
