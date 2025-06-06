@@ -2,6 +2,9 @@ import os
 import glob
 import pickle
 import sys
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 import matplotlib.pyplot as plt
 import torch
@@ -82,7 +85,7 @@ for i_pass in range(n_passes):
         model_params={'covar_module': gpytorch.kernels.MaternKernel(2.5)},
         noise_variance=noise_variance,
         adaptive_noise_variance=True,
-        reference_spectra_for_lengthscale_fitting=(ref_spectra_x, ref_spectra_y[0]),
+        reference_spectra_for_lengthscale_fitting=(ref_spectra_x[ref_spectra_x > 11585], ref_spectra_y[0][ref_spectra_x > 11585]),
         lower_bounds=torch.tensor([energies[0]]),
         upper_bounds=torch.tensor([energies[-1]]),
         acquisition_function_class=ComprehensiveAugmentedAcquisitionFunction,
@@ -91,12 +94,12 @@ for i_pass in range(n_passes):
                                     'reference_spectra_x': ref_spectra_x,
                                     'reference_spectra_y': ref_spectra_y,
                                     'phi_r': 1e3,
-                                    'phi_g': 2e-2, #2e-2,
-                                    'phi_g2': 3e-3, #3e-4
+                                    'phi_g': 2e-3, #2e-2,
+                                    'phi_g2': 3e-2, #3e-4
                                     'beta': 0.999,
                                     'gamma': 0.95,
                                     'addon_term_lower_bound': 3e-2,
-                                    'estimate_posterior_mean_by_interpolation': True,
+                                    'estimate_posterior_mean_by_interpolation': False,
                                     'subtract_background_gradient': True,
                                     'debug': False
                                     },
@@ -104,7 +107,7 @@ for i_pass in range(n_passes):
         optimizer_class=DiscreteOptimizer,
         optimizer_params={'optim_func': botorch.optim.optimize.optimize_acqf_discrete,
                         'optim_func_params': {
-                            'choices': torch.linspace(0, 1, 1000)[:, None]
+                            'choices': torch.linspace(0, 1, 2000)[:, None]
                         }
                         },
 
@@ -116,14 +119,14 @@ for i_pass in range(n_passes):
         stopping_criterion_configs=StoppingCriterionConfig(
             method='max_uncertainty',
             n_max_measurements=60,
-            params={'threshold': 0.01}
+            params={'threshold': 0.}
         ),
-        use_spline_interpolation_for_posterior_mean=True
+        use_spline_interpolation_for_posterior_mean=False
     )
 
     analyzer_configs = ExperimentAnalyzerConfig(
         name='Pt',
-        output_dir='outputs/Pt_raw_uniInit_bgGrad',
+        output_dir='outputs/Pt_raw_uniInit_GPPM_bgGrad',
         n_plot_interval=5
     )
 
@@ -131,20 +134,20 @@ for i_pass in range(n_passes):
         set_random_seed(124 + i_pass)
     pass_str = f'_pass{i_pass}' if n_passes > 1 else ''
     
-    analyzer_configs.output_dir = f'outputs/Pt_raw_uniInit_bgGrad{pass_str}'
-    normalizer.save_state(f'outputs/Pt_raw_uniInit_bgGrad{pass_str}/normalizer_state.npy')
+    analyzer_configs.output_dir = f'outputs/Pt_raw_uniInit_GPPM_bgGrad{pass_str}'
+    normalizer.save_state(f'outputs/Pt_raw_uniInit_GPPM_bgGrad{pass_str}/normalizer_state.npy')
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
-    experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
+    experiment.run(n_initial_measurements=10, n_target_measurements=60, initial_measurement_method='uniform')
 
     if True:
         # No acquisition reweighting
         set_random_seed(124 + i_pass)
         configs.n_updates_create_acqf_weight_func = None
-        analyzer_configs.output_dir = f'outputs/Pt_raw_uniInit_noReweighting_bgGrad{pass_str}'
+        analyzer_configs.output_dir = f'outputs/Pt_raw_uniInit_GPPM_noReweighting_bgGrad{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
-        experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
+        experiment.run(n_initial_measurements=10, n_target_measurements=60, initial_measurement_method='uniform')
 
         
         # Posterior standard deviation-only acquisition
@@ -152,7 +155,7 @@ for i_pass in range(n_passes):
         configs.acquisition_function_class = PosteriorStandardDeviation
         configs.acquisition_function_params = {}
         configs.stopping_criterion_configs = None
-        analyzer_configs.output_dir = f'outputs/Pt_raw_uniInit_posteriorStddev_bgGrad{pass_str}'
+        analyzer_configs.output_dir = f'outputs/Pt_raw_uniInit_GPPM_posteriorStddev_bgGrad{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
         experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
@@ -160,9 +163,9 @@ for i_pass in range(n_passes):
         # UCB
         set_random_seed(124 + i_pass)
         configs.acquisition_function_class = UpperConfidenceBound
-        configs.acquisition_function_params = {"beta": 10 ** 2}
+        configs.acquisition_function_params = {"beta": 5 ** 2}
         configs.stopping_criterion_configs = None
-        analyzer_configs.output_dir = f'outputs/Pt_raw_uniInit_UCB_kappa_10{pass_str}'
+        analyzer_configs.output_dir = f'outputs/Pt_raw_uniInit_GPPM_UCB_kappa_5{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
         experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
@@ -171,8 +174,19 @@ for i_pass in range(n_passes):
         set_random_seed(124 + i_pass)
         configs.n_updates_create_acqf_weight_func = None
         configs.stopping_criterion_configs = None
-        analyzer_configs.output_dir = f'outputs/Pt_raw_uniInit_uniformSampling_bgGrad{pass_str}'
+        analyzer_configs.output_dir = f'outputs/Pt_raw_uniInit_GPPM_uniformSampling_bgGrad{pass_str}'
         experiment = SimulatedUniformSamplingExperiment(configs, guide_class=UniformSamplingExperimentGuide,
                                                 run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
         experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
+
+    # for beta in range(1, 15):
+    #     # UCB
+    #     set_random_seed(124 + i_pass)
+    #     configs.acquisition_function_class = UpperConfidenceBound
+    #     configs.acquisition_function_params = {"beta": beta ** 2}
+    #     configs.stopping_criterion_configs = None
+    #     analyzer_configs.output_dir = f'outputs/Pt_raw_uniInit_GPPM_UCB_kappa_{beta}{pass_str}'
+    #     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
+    #     experiment.build(energies, data)
+    #     experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')

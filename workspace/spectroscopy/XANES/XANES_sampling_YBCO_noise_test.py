@@ -82,9 +82,9 @@ for noise_var in [1e-6, 1e-5, 1e-4, 1e-3, 1e-2]:
                                     'differentiation_method': 'numerical',
                                     'reference_spectra_x': ref_spectra_x,
                                     'reference_spectra_y': ref_spectra_y,
-                                    'phi_r': None,
-                                    'phi_g': None, #2e-2,
-                                    'phi_g2': None, #3e-4
+                                    'phi_r': 1e2,
+                                    'phi_g': 2e-2, #2e-2,
+                                    'phi_g2': 3e-4, #3e-4
                                     'beta': 0.999,
                                     'gamma': 0.95,
                                     'addon_term_lower_bound': 3e-2,
@@ -114,15 +114,15 @@ for noise_var in [1e-6, 1e-5, 1e-4, 1e-3, 1e-2]:
 
     analyzer_configs = ExperimentAnalyzerConfig(
         name='YBCO3data',
-        output_dir='outputs/YBCO_raw_uniInit',
+        output_dir='outputs/YBCO_raw_uniInit_GPPM',
         n_plot_interval=5
     )
 
     set_random_seed(124)
     pass_str = 'noiseVar_{:.1e}'.format(noise_var)
-    analyzer_configs.output_dir = 'outputs/YBCO_raw_uniInit_addedNoiseVar_{:.1e}_{}'.format(added_noise_variance, pass_str)
+    analyzer_configs.output_dir = 'outputs/YBCO_raw_uniInit_GPPM_addedNoiseVar_{:.1e}_{}'.format(added_noise_variance, pass_str)
     
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs, instrument_noise_var=added_noise_variance)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=10, n_target_measurements=50, initial_measurement_method='uniform')
-    xanes_normalizer.save_state('outputs/YBCO_raw_uniInit_addedNoiseVar_{:.1e}_{}/normalizer_state.npy'.format(added_noise_variance, pass_str))
+    xanes_normalizer.save_state('outputs/YBCO_raw_uniInit_GPPM_addedNoiseVar_{:.1e}_{}/normalizer_state.npy'.format(added_noise_variance, pass_str))

@@ -91,13 +91,13 @@ for i_pass in range(n_passes):
                                     'differentiation_method': 'numerical',
                                     'reference_spectra_x': ref_spectra_x,
                                     'reference_spectra_y': ref_spectra_y,
-                                    'phi_r': None,
-                                    'phi_g': None, #2e-2,
-                                    'phi_g2': None, #3e-4
+                                    'phi_r': 1e2,
+                                    'phi_g': 2e-2, #2e-2,
+                                    'phi_g2': 3e-4, #3e-4
                                     'beta': 0.999,
                                     'gamma': 0.95,
                                     'addon_term_lower_bound': 3e-2,
-                                    'estimate_posterior_mean_by_interpolation': True,
+                                    'estimate_posterior_mean_by_interpolation': False,
                                     'debug': False
                                     },
 
@@ -117,41 +117,43 @@ for i_pass in range(n_passes):
             method='max_uncertainty',
             params={'threshold': 0.05}
         ),
-        use_spline_interpolation_for_posterior_mean=True
+        use_spline_interpolation_for_posterior_mean=False
     )
 
     analyzer_configs = ExperimentAnalyzerConfig(
         name='YBCO3data',
-        output_dir='outputs/YBCO_raw_uniInit',
+        output_dir='outputs/YBCO_raw_uniInit_GPPM',
         n_plot_interval=5
     )
 
     if i_pass > 0:
         set_random_seed(124 + i_pass)
     pass_str = f'_pass{i_pass}' if n_passes > 1 else ''
-    analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit{pass_str}'
+    analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_GPPM{pass_str}'
     
     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
     experiment.build(energies, data)
     experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
-    xanes_normalizer.save_state(f'outputs/YBCO_raw_uniInit{pass_str}/normalizer_state.npy')
+    xanes_normalizer.save_state(f'outputs/YBCO_raw_uniInit_GPPM{pass_str}/normalizer_state.npy')
 
 
     if True:
         # # No acquisition reweighting
         set_random_seed(124 + i_pass)
         configs.n_updates_create_acqf_weight_func = None
-        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_noReweighting{pass_str}'
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_GPPM_noReweighting{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
         experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
+
+    if True:
 
         # # Posterior standard deviation-only acquisition
         set_random_seed(124 + i_pass)
         configs.acquisition_function_class = PosteriorStandardDeviation
         configs.acquisition_function_params = {}
         configs.stopping_criterion_configs = None
-        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_posteriorStddev{pass_str}'
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_GPPM_posteriorStddev{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
         experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
@@ -159,9 +161,9 @@ for i_pass in range(n_passes):
         # UCB
         set_random_seed(124 + i_pass)
         configs.acquisition_function_class = UpperConfidenceBound
-        configs.acquisition_function_params = {"beta": 13 ** 2}
+        configs.acquisition_function_params = {"beta": 12 ** 2}
         configs.stopping_criterion_configs = None
-        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_UCB_kappa_13{pass_str}'
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_GPPM_UCB_kappa_12{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
         experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
@@ -171,7 +173,7 @@ for i_pass in range(n_passes):
         configs.acquisition_function_class = ExpectedImprovement
         configs.acquisition_function_params = {"best_f": (data.min() - data.mean()) / data.std()}
         configs.stopping_criterion_configs = None
-        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_EI{pass_str}'
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_GPPM_EI{pass_str}'
         experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
         experiment.build(energies, data)
         experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
@@ -180,7 +182,7 @@ for i_pass in range(n_passes):
         set_random_seed(124 + i_pass)
         configs.n_updates_create_acqf_weight_func = None
         configs.stopping_criterion_configs = None
-        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_uniformSampling{pass_str}'
+        analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_GPPM_uniformSampling{pass_str}'
         experiment = SimulatedUniformSamplingExperiment(
             configs, guide_class=UniformSamplingExperimentGuide,
             run_analysis=True, analyzer_configs=analyzer_configs
@@ -188,3 +190,13 @@ for i_pass in range(n_passes):
         experiment.build(energies, data)
         experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')
 
+
+# for beta in range(1, 15):
+#     set_random_seed(124 + i_pass)
+#     configs.acquisition_function_class = UpperConfidenceBound
+#     configs.acquisition_function_params = {"beta": beta ** 2}
+#     configs.stopping_criterion_configs = None
+#     analyzer_configs.output_dir = f'outputs/YBCO_raw_uniInit_GPPM_UCB_kappa_{beta}{pass_str}'
+#     experiment = SimulatedScanningExperiment(configs, run_analysis=True, analyzer_configs=analyzer_configs)
+#     experiment.build(energies, data)
+#     experiment.run(n_initial_measurements=10, n_target_measurements=70, initial_measurement_method='uniform')

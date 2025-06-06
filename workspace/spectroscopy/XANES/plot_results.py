@@ -6,6 +6,7 @@ import logging
 import re
 from typing import Optional
 
+import matplotlib.colors
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib
@@ -29,6 +30,8 @@ def interpolate_data_on_grid(x, y, n_pts, x_range=None):
 
 class ResultAnalyzer:
     style_list = ["-", "-.", ":", (0, (3, 2, 1, 2, 1, 2)), (0, (3, 2, 3, 2, 1, 2)), (0, (1, 1))]
+    color_list = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    marker_style_list = ["o", "s", "D", "P", "X", "d"]
 
     def __init__(self, output_dir="factory"):
         self.output_dir = output_dir
@@ -106,6 +109,7 @@ class ResultAnalyzer:
                 n_pts_all_files[i],
                 rms_all_files[i],
                 linestyle=self.style_list[i % len(self.style_list)],
+                color=self.color_list[i % len(self.color_list)],
                 label=labels[i],
             )
         if ref_line_y is not None:
@@ -156,7 +160,7 @@ class ResultAnalyzer:
             )
             auc = self.calculate_auc(n_pts_all_files[i][slicer], rms_all_files[i][slicer])
             auc_list.append(auc)
-            rect = ax.bar(i, auc, label=labels[i], width=0.8)
+            rect = ax.bar(i, auc, label=labels[i], width=0.8, color=self.color_list[i % len(self.color_list)])
             ax.bar_label(rect, fmt="%.2f")
         ax.set_xticks([])
         ax.set_ylabel("Area under the curve")
@@ -211,6 +215,11 @@ class ResultAnalyzer:
         plot_truth=True,
         label="Measured",
         linestyle=None,
+        color=None,
+        marker=None,
+        marker_size=10,
+        hollow_marker=False,
+        marker_edge_width=1,
         add_legend=True,
         figsize=None,
         fig=None,
@@ -278,21 +287,26 @@ class ResultAnalyzer:
                     data["mu_list"][iter],
                     linewidth=1,
                     linestyle=linestyle,
+                    color=color,
                     label=label,
                 )
                 if plot_uncertainty:
                     this_ax.fill_between(
-                        data["data_x"],
-                        data["mu_list"][iter] - data["sigma_list"][iter],
-                        data["mu_list"][iter] + data["sigma_list"][iter],
+                        data["x_dense_list"],
+                        data["mu_dense_list"][iter] - data["sigma_dense_list"][iter],
+                        data["mu_dense_list"][iter] + data["sigma_dense_list"][iter],
                         alpha=0.5,
                     )
                 if plot_measurements:
                     this_ax.scatter(
                         data["measured_x_list"][iter],
                         data["measured_y_list"][iter],
-                        s=14,
+                        s=marker_size,
                         label="Measured",
+                        color=color,
+                        marker=marker,
+                        facecolors="none" if hollow_marker else None,
+                        linewidth=marker_edge_width,
                     )
                 this_ax.set_title("{} points".format(data["n_measured_list"][iter]))
                 this_ax.set_xlabel("Energy (eV)")
@@ -339,10 +353,15 @@ class ResultAnalyzer:
                 n_cols=n_cols,
                 interval=interval,
                 plot_uncertainty=False,
-                plot_measurements=False,
+                plot_measurements=True,
                 plot_truth=(i == 0),
                 label=labels[i],
                 linestyle=self.style_list[i],
+                color=self.color_list[i],
+                marker=self.marker_style_list[i],
+                marker_size=6,
+                marker_edge_width=0.5,
+                hollow_marker=True,
                 add_legend=add_legend,
                 fig=fig,
                 save=False,
@@ -370,7 +389,7 @@ class ResultAnalyzer:
         if normalizer is not None:
             true_y = normalizer.apply(true_x, true_y)
 
-        def plot_ax(ax, tick_interval=None, add_legend=True, linewidth=1):
+        def plot_ax(ax, tick_interval=None, add_legend=True, linewidth=1, marker_size=6):
             for i, f in enumerate(file_list):
                 n_pts, rms_list = self.load_rms_data(f, normalizer=normalizer, x_range=zoom_in_range_x)
                 print(f'{labels[i]}: {np.array(rms_list)[np.array(n_pts) == at_n_pts]}')
@@ -386,18 +405,19 @@ class ResultAnalyzer:
                     linewidth=linewidth,
                     linestyle=self.style_list[i % len(self.style_list)],
                     label=labels[i],
+                    color=self.color_list[i % len(self.color_list)],
                 )
-                if i == 0:
-                    meas_x, meas_y = (
-                        data["measured_x_list"][at_iter],
-                        data["measured_y_list"][at_iter],
-                    )
-                    if normalizer is not None:
-                        sorted_inds = np.argsort(meas_x)
-                        meas_x = meas_x[sorted_inds]
-                        meas_y = meas_y[sorted_inds]
-                        meas_y = normalizer.apply(meas_x, meas_y)
-                    ax.scatter(meas_x, meas_y, s=4)
+                # if i == 0:
+                meas_x, meas_y = (
+                    data["measured_x_list"][at_iter],
+                    data["measured_y_list"][at_iter],
+                )
+                if normalizer is not None:
+                    sorted_inds = np.argsort(meas_x)
+                    meas_x = meas_x[sorted_inds]
+                    meas_y = meas_y[sorted_inds]
+                    meas_y = normalizer.apply(meas_x, meas_y)
+                ax.scatter(meas_x, meas_y, s=marker_size, color=self.color_list[i % len(self.color_list)], marker=self.marker_style_list[i % len(self.marker_style_list)], facecolors="none", linewidth=0.5)
             ax.plot(
                 true_x,
                 true_y,
@@ -422,7 +442,7 @@ class ResultAnalyzer:
         plot_ax(ax, tick_interval=20, add_legend=add_legend)
         if zoom_in_range_x is not None:
             fig_zoom, ax_zoom = plt.subplots(1, 1, figsize=figsize)
-            plot_ax(ax_zoom, add_legend=False, linewidth=2)
+            plot_ax(ax_zoom, add_legend=False, linewidth=2, marker_size=40)
             ax_zoom.set_xlim(zoom_in_range_x)
             ax_zoom.set_ylim(zoom_in_range_y)
             ax_zoom.tick_params(axis="x", labelsize=22)

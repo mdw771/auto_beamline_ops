@@ -106,12 +106,12 @@ class PtGridTransferTester(LTOGridTransferTester):
                                          'reference_spectra_x': self.ref_spectra_x,
                                          'reference_spectra_y': self.ref_spectra_y,
                                          'phi_r': 1e3,
-                                         'phi_g': 2e-2, #2e-2,
-                                         'phi_g2': 3e-3, #3e-4
+                                         'phi_g': 2e-3, #2e-2,
+                                         'phi_g2': 3e-2, #3e-4
                                          'beta': 0.999,
                                          'gamma': 0.95,
                                          'addon_term_lower_bound': 3e-2,
-                                         'estimate_posterior_mean_by_interpolation': True,
+                                         'estimate_posterior_mean_by_interpolation': False,
                                          'debug': False
                                          },
 
@@ -131,7 +131,7 @@ class PtGridTransferTester(LTOGridTransferTester):
                 method='max_uncertainty',
                 params={'threshold': 0.0001}
             ),
-            use_spline_interpolation_for_posterior_mean=True
+            use_spline_interpolation_for_posterior_mean=False
         )
         return configs
 

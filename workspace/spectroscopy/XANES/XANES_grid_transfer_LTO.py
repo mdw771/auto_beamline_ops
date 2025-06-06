@@ -154,13 +154,13 @@ class LTOGridTransferTester:
                                          'differentiation_method': 'numerical',
                                          'reference_spectra_x': self.ref_spectra_x,
                                          'reference_spectra_y': self.ref_spectra_y,
-                                         'phi_r': 1e2,
-                                         'phi_g': 1e-1,
-                                         'phi_g2': 1e-3,
+                                         'phi_r': 1e1,
+                                         'phi_g': 1e-2,
+                                         'phi_g2': 1e-4,
                                          'beta': 0.999,
                                          'gamma': 0.95,
                                          'addon_term_lower_bound': 3e-2,
-                                         'estimate_posterior_mean_by_interpolation': True,
+                                         'estimate_posterior_mean_by_interpolation': False,
                                          'debug': False},
             n_updates_create_acqf_weight_func=5,
             acqf_weight_func_floor_value=0.01,
@@ -178,7 +178,7 @@ class LTOGridTransferTester:
                 params={'threshold': 0.001},
                 n_updates_to_begin=6,
             ),
-            use_spline_interpolation_for_posterior_mean=True
+            use_spline_interpolation_for_posterior_mean=False
         )
         return configs
 
