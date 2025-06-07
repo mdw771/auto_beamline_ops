@@ -283,8 +283,8 @@ class ResultAnalyzer:
                         label="Ground truth",
                     )
                 this_ax.plot(
-                    data["data_x"],
-                    data["mu_list"][iter],
+                    data["x_dense_list"],
+                    data["mu_dense_list"][iter],
                     linewidth=1,
                     linestyle=linestyle,
                     color=color,
