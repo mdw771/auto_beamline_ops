@@ -183,6 +183,8 @@ class DynamicExperimentResultAnalyzer:
             ax.legend()
         plt.tight_layout()
         fig.savefig(os.path.join(self.output_dir, output_filename))
+        print("Max error of maximum position: {}".format(np.max(np.abs(np.array(true_max_pos_list) - np.array(max_pos_list)))))
+        print("Max error of maximum derivative position: {}".format(np.max(np.abs(np.array(true_max_deriv_pos_list) - np.array(max_deriv_pos_list)))))
 
     def compare_rms_across_time(self, result_folders, labels, output_filename='comparison_rms_across_time.pdf', read_data=True, normalizer=None, fit_normalizer_with_true_data=True):
         fig, ax = plt.subplots(1, 1, figsize=(6, 2.5))
@@ -301,9 +303,16 @@ class DynamicExperimentResultAnalyzer:
         fig, ax = plt.subplots(1, 1, figsize=(6, 3))
         for i, (result_folder, label) in enumerate(zip(result_folders, labels)):
             table = pd.read_csv(os.path.join(result_folder, 'estimated_data_ind_{}.csv'.format(spectrum_index)))
+            pkl_file = glob.glob(os.path.join(result_folder, '*index_{}*intermediate_data.pkl'.format(spectrum_index)))[0]
+            pkl_file = pickle.load(open(pkl_file, "rb"))
             energies = table['energy']
             estimated_data = table['estimated_data']
             true_data = table['true_data']
+            
+            # energies = pkl_file['x_dense_list']
+            # estimated_data = pkl_file['mu_dense_list'][-1]
+            # _, true_data = interpolate_data_on_grid(table['energy'].to_numpy(), true_data.to_numpy(), len(energies))
+            
             if normalizer is not None:
                 estimated_data = normalizer.apply(energies, estimated_data)
                 true_data = normalizer.apply(energies, true_data)

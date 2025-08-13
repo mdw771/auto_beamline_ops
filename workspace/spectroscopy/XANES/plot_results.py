@@ -335,8 +335,16 @@ class ResultAnalyzer:
         interval=5,
         sharex=False,
         add_legend=True,
+        color_list=None,
+        style_list=None,
+        marker_style_list=None,
+        marker_size=6,
         output_filename="comparison_intermediate.pdf",
     ):
+        color_list = color_list if color_list is not None else self.color_list
+        style_list = style_list if style_list is not None else self.style_list
+        marker_style_list = marker_style_list if marker_style_list is not None else self.marker_style_list
+        
         n = 0
         for filename in file_list:
             data = pickle.load(open(filename, "rb"))
@@ -356,10 +364,10 @@ class ResultAnalyzer:
                 plot_measurements=True,
                 plot_truth=(i == 0),
                 label=labels[i],
-                linestyle=self.style_list[i],
-                color=self.color_list[i],
-                marker=self.marker_style_list[i],
-                marker_size=6,
+                linestyle=style_list[i],
+                color=color_list[i],
+                marker=marker_style_list[i],
+                marker_size=marker_size,
                 marker_edge_width=0.5,
                 hollow_marker=True,
                 add_legend=add_legend,
@@ -381,8 +389,15 @@ class ResultAnalyzer:
         add_legend=True,
         figsize=(5, 5),
         normalizer: Optional[xanestools.XANESNormalizer] = None,
+        color_list=None,
+        style_list=None,
+        marker_style_list=None,
         output_filename="comparison_estimate.pdf",
     ):
+        color_list = color_list if color_list is not None else self.color_list
+        style_list = style_list if style_list is not None else self.style_list
+        marker_style_list = marker_style_list if marker_style_list is not None else self.marker_style_list
+        
         fig, ax = plt.subplots(1, 1, figsize=figsize)
         data = pickle.load(open(file_list[0], "rb"))
         true_x, true_y = data["data_x"], data["data_y"]
@@ -396,16 +411,16 @@ class ResultAnalyzer:
                 
                 data = pickle.load(open(f, "rb"))
                 at_iter = data["n_measured_list"].index(at_n_pts)
-                x, y = data["data_x"], data["mu_list"][at_iter]
+                x, y = data["x_dense_list"], data["mu_dense_list"][at_iter]
                 if normalizer is not None:
                     y = normalizer.apply(x, y)
                 ax.plot(
                     x,
                     y,
                     linewidth=linewidth,
-                    linestyle=self.style_list[i % len(self.style_list)],
+                    linestyle=style_list[i % len(style_list)],
                     label=labels[i],
-                    color=self.color_list[i % len(self.color_list)],
+                    color=color_list[i % len(color_list)],
                 )
                 # if i == 0:
                 meas_x, meas_y = (
@@ -417,7 +432,7 @@ class ResultAnalyzer:
                     meas_x = meas_x[sorted_inds]
                     meas_y = meas_y[sorted_inds]
                     meas_y = normalizer.apply(meas_x, meas_y)
-                ax.scatter(meas_x, meas_y, s=marker_size, color=self.color_list[i % len(self.color_list)], marker=self.marker_style_list[i % len(self.marker_style_list)], facecolors="none", linewidth=0.5)
+                ax.scatter(meas_x, meas_y, s=marker_size, color=color_list[i % len(color_list)], marker=marker_style_list[i % len(marker_style_list)], facecolors="none", linewidth=0.5)
             ax.plot(
                 true_x,
                 true_y,
