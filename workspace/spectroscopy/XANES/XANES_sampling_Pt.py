@@ -29,12 +29,12 @@ torch.set_default_device('cpu')
 
 set_random_seed(124)
 
-data_raw = read_nor('data/raw/Pt-XANES/Pt_xmu/10Feb_PtL3_025_042C.xmu')
+data_raw = read_nor('data/raw/Pt-XANES/Pt_xmu/PtL3_025_042C.xmu')
 _, unique_inds = np.unique(data_raw['e'], return_index=True)
 unique_inds = np.sort(unique_inds)
 data_raw = data_raw.iloc[unique_inds]
-ref1 = read_nor('data/raw/Pt-XANES/Pt_xmu/10Feb_PtL3_024_026C.xmu').iloc[unique_inds]
-ref2 = read_nor('data/raw/Pt-XANES/Pt_xmu/10Feb_PtL3_045_497C.xmu').iloc[unique_inds]
+ref1 = read_nor('data/raw/Pt-XANES/Pt_xmu/PtL3_024_026C.xmu').iloc[unique_inds]
+ref2 = read_nor('data/raw/Pt-XANES/Pt_xmu/PtL3_045_497C.xmu').iloc[unique_inds]
 
 def linear_fit(basis_list, data):
     a = np.stack([to_numpy(ref_spectra_0), to_numpy(ref_spectra_1)]).T

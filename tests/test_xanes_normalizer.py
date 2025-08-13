@@ -9,7 +9,7 @@ from autobl.steering.io_util import *
     
 
 def test_xanes_normalizer(generate_gold=False, debug=False):
-    dataset = NORSpectroscopyDataset('data/xanes', file_pattern='10Feb_PtL3_025_042C.xmu', data_column='xmu')
+    dataset = NORSpectroscopyDataset('data/xanes', file_pattern='PtL3_025_042C.xmu', data_column='xmu')
     data = dataset[0]
     energies = dataset.energies_ev
     
